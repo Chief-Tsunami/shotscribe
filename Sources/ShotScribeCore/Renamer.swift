@@ -33,16 +33,27 @@ public struct Renamer: Sendable {
 
     /// Rename `url` in place. `force` renames even files the user named
     /// themselves; `dryRun` computes the target without moving anything.
+    ///
+    /// `label` short-circuits the OCR→titler pipeline: when the caller already
+    /// has a title (the MCP case — the calling model IS the intelligence, so
+    /// asking our own titler would be a wasteful nested LLM call), we clean it
+    /// and use it directly.
     @discardableResult
-    public func rename(fileAt url: URL, force: Bool = false, dryRun: Bool = false) async throws -> RenameOutcome {
+    public func rename(fileAt url: URL, label explicitLabel: String? = nil,
+                       force: Bool = false, dryRun: Bool = false) async throws -> RenameOutcome {
         guard fileManager.fileExists(atPath: url.path) else { return .fileMissing(url) }
 
         let current = url.lastPathComponent
         guard force || Naming.isRawCapture(current) else { return .skippedNotRawCapture(url) }
 
-        let ocr = OCR.recognizeText(atPath: url.path)
-        let rawTitle = (try? await titler.title(forOCRText: ocr)) ?? "Screenshot"
-        let label = LabelCleaner.clean(rawTitle)
+        let label: String
+        if let explicitLabel, !explicitLabel.trimmingCharacters(in: .whitespaces).isEmpty {
+            label = LabelCleaner.clean(explicitLabel)
+        } else {
+            let ocr = OCR.recognizeText(atPath: url.path)
+            let rawTitle = (try? await titler.title(forOCRText: ocr)) ?? "Screenshot"
+            label = LabelCleaner.clean(rawTitle)
+        }
 
         guard let desired = Naming.filename(label: label, capturedAt: capturedAt(of: url), ext: url.pathExtension) else {
             return .skippedNoLabel(url)

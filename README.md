@@ -25,10 +25,10 @@ Titling is a swappable seam (`Titler`):
 - **`KeywordTitler`** needs no network and no Claude — it picks the salient words
   straight from the OCR text. So the tool is still useful to anyone.
 
-Because titling is one file behind a protocol, the *same core* can later be
-driven by an **MCP server** — so Claude Cloud / Cowork can call
-`label_screenshot` as a tool during a terminal session, instead of the tool
-calling Claude. That inversion is the roadmap below.
+And the inversion also exists: **`shotscribe-mcp`** is an MCP server (stdio)
+that lets Claude Code / Cowork call the same engine as tools *during a
+session* — there, the calling model IS the intelligence, so the server only
+does the mechanical, on-device parts and takes the model's title as input.
 
 ## Install
 
@@ -60,6 +60,27 @@ shotscribe watch ~/Pictures/Screenshots
 shotscribe label --no-claude "~/Desktop/Screenshot ....png"
 ```
 
+## MCP server (Claude Code / Cowork integration)
+
+`shotscribe-mcp` speaks MCP over stdio and exposes three tools:
+
+| Tool | What it does |
+|---|---|
+| `latest_screenshots` | List the newest captures from your macOS screenshot folder |
+| `ocr_screenshot` | On-device OCR — returns the text (+ an offline suggested title) so the *calling model* composes the label |
+| `rename_screenshot` | Safe rename to `<date> <time> <Label>.ext`; takes the caller's `title`, protects user-named files (`force` to override), supports `dry_run` |
+
+Register it with Claude Code:
+
+```bash
+swift build -c release
+claude mcp add shotscribe -- "$(pwd)/.build/release/shotscribe-mcp"
+```
+
+Then, mid-session: *"grab my latest screenshot and give it a proper name"* —
+Claude lists, OCRs, composes the title, renames. No nested LLM calls: when the
+caller is already a model, the server stays mechanical.
+
 ## Privacy
 
 OCR runs entirely on-device (Apple Vision). Only the *extracted text* is sent
@@ -70,7 +91,7 @@ inference on Anthropic's servers, billed to your Claude subscription).
 ## Roadmap
 
 - [x] Core engine + CLI (`rename` / `label` / `watch`)
-- [ ] MCP server target — expose `label_screenshot` so Claude Cloud / Cowork can call it
+- [x] MCP server target (`shotscribe-mcp`) — Claude Code / Cowork call it as tools
 - [ ] `MenuBarExtra` app — the always-there local UI
 - [ ] WidgetKit widget — a one-tap App Intent front door
 
