@@ -1,0 +1,69 @@
+import Foundation
+
+/// The outcome of a rename attempt — explicit so the CLI (and later the MCP
+/// server) can report exactly what happened.
+public enum RenameOutcome: Sendable, Equatable {
+    case renamed(from: URL, to: URL)
+    case wouldRename(from: URL, to: URL)   // dry run
+    case skippedNotRawCapture(URL)         // user-named file — left alone
+    case skippedNoLabel(URL)               // nothing usable to name it
+    case fileMissing(URL)
+}
+
+/// Orchestrates one screenshot: OCR the file, ask the `Titler` for a label,
+/// and rename it `<date> <time> <Label>.ext`. Only macOS raw captures are
+/// renamed unless `force` is set.
+public struct Renamer: Sendable {
+    public let titler: Titler
+
+    public init(titler: Titler) {
+        self.titler = titler
+    }
+
+    private var fileManager: FileManager { .default }
+
+    /// OCR + title only — the `label` command. Never touches the file.
+    public func label(fileAt url: URL) async -> String {
+        let ocr = OCR.recognizeText(atPath: url.path)
+        if let title = try? await titler.title(forOCRText: ocr), !title.isEmpty {
+            return title
+        }
+        return "Screenshot"
+    }
+
+    /// Rename `url` in place. `force` renames even files the user named
+    /// themselves; `dryRun` computes the target without moving anything.
+    @discardableResult
+    public func rename(fileAt url: URL, force: Bool = false, dryRun: Bool = false) async throws -> RenameOutcome {
+        guard fileManager.fileExists(atPath: url.path) else { return .fileMissing(url) }
+
+        let current = url.lastPathComponent
+        guard force || Naming.isRawCapture(current) else { return .skippedNotRawCapture(url) }
+
+        let ocr = OCR.recognizeText(atPath: url.path)
+        let rawTitle = (try? await titler.title(forOCRText: ocr)) ?? "Screenshot"
+        let label = LabelCleaner.clean(rawTitle)
+
+        guard let desired = Naming.filename(label: label, capturedAt: capturedAt(of: url), ext: url.pathExtension) else {
+            return .skippedNoLabel(url)
+        }
+
+        let dir = url.deletingLastPathComponent()
+        let final = Naming.uniqueName(desired) { candidate in
+            fileManager.fileExists(atPath: dir.appendingPathComponent(candidate).path)
+        }
+        let target = dir.appendingPathComponent(final)
+        guard target.path != url.path else { return .skippedNoLabel(url) }
+
+        if dryRun { return .wouldRename(from: url, to: target) }
+        try fileManager.moveItem(at: url, to: target)
+        return .renamed(from: url, to: target)
+    }
+
+    /// Best-effort capture time: file creation date, then modification date,
+    /// then now.
+    private func capturedAt(of url: URL) -> Date {
+        let vals = try? url.resourceValues(forKeys: [.creationDateKey, .contentModificationDateKey])
+        return vals?.creationDate ?? vals?.contentModificationDate ?? Date()
+    }
+}
