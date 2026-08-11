@@ -81,6 +81,21 @@ Then, mid-session: *"grab my latest screenshot and give it a proper name"* —
 Claude lists, OCRs, composes the title, renames. No nested LLM calls: when the
 caller is already a model, the server stays mechanical.
 
+## Menu bar app
+
+`ShotScribe.app` is the always-there face: a menu bar panel with an
+auto-rename watch toggle, a Claude/offline titler switch, "Rename latest
+capture now", and a history of recent renames. Activity logs to
+`~/Library/Logs/ShotScribe.log`.
+
+```bash
+./scripts/package-app.sh     # → dist/ShotScribe.app (ad-hoc signed, no Dock icon)
+open dist/ShotScribe.app
+```
+
+Auto-rename is ON by default — launching an app whose one job is renaming
+screenshots is the opt-in; the toggle is right there in the panel.
+
 ## Privacy
 
 OCR runs entirely on-device (Apple Vision). Only the *extracted text* is sent
@@ -92,8 +107,9 @@ inference on Anthropic's servers, billed to your Claude subscription).
 
 - [x] Core engine + CLI (`rename` / `label` / `watch`)
 - [x] MCP server target (`shotscribe-mcp`) — Claude Code / Cowork call it as tools
-- [ ] `MenuBarExtra` app — the always-there local UI
+- [x] `MenuBarExtra` app — the always-there local UI (`scripts/package-app.sh`)
 - [ ] WidgetKit widget — a one-tap App Intent front door
+- [ ] Launch at login (`SMAppService`) + notarized distribution
 
 ## Why this exists
 

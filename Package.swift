@@ -13,6 +13,9 @@ let package = Package(
         // MCP server (stdio) — lets Claude Code / Cowork call the same engine
         // as tools during a terminal session.
         .executable(name: "shotscribe-mcp", targets: ["shotscribe-mcp"]),
+        // Menu bar app — the always-there local UI (bundle it with
+        // scripts/package-app.sh).
+        .executable(name: "shotscribe-menubar", targets: ["shotscribe-menubar"]),
     ],
     targets: [
         .target(name: "ShotScribeCore"),
@@ -22,6 +25,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "shotscribe-mcp",
+            dependencies: ["ShotScribeCore"]
+        ),
+        .executableTarget(
+            name: "shotscribe-menubar",
             dependencies: ["ShotScribeCore"]
         ),
         .testTarget(
