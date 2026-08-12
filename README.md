@@ -91,6 +91,23 @@ Then, mid-session: *"grab my latest screenshot and give it a proper name"* —
 Claude lists, OCRs, composes the title, renames. No nested LLM calls: when the
 caller is already a model, the server stays mechanical.
 
+### The `/screenshot` skill
+
+[`skills/screenshot/SKILL.md`](skills/screenshot/SKILL.md) turns "see my newest
+screenshot" into a one-word gesture for Claude Code: it finds the newest
+capture (via ShotScribe's MCP tools when registered, plain `ls` otherwise),
+reads it as an image, and addresses it in the context of what you're doing —
+then quietly renames it if it still wears a raw capture name, titling from
+what Claude *saw* rather than just the OCR text. Install:
+
+```bash
+mkdir -p ~/.claude/skills/screenshot
+curl -fsSL https://raw.githubusercontent.com/Chief-Tsunami/shotscribe/main/skills/screenshot/SKILL.md \
+  -o ~/.claude/skills/screenshot/SKILL.md
+```
+
+Then type `/screenshot` in any Claude Code session.
+
 ## Menu bar app
 
 `ShotScribe.app` is the always-there face: a menu bar panel with an
