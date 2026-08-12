@@ -10,6 +10,93 @@ import ShotScribeCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
+    private var welcome: NSWindow?
+
+    /// First launch: a menu-bar-only app looks like "nothing happened" from
+    /// Spotlight/Finder — the welcome window says where the app lives.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        if !UserDefaults.standard.bool(forKey: "shotscribe.welcomed") {
+            UserDefaults.standard.set(true, forKey: "shotscribe.welcomed")
+            showWelcome()
+        }
+    }
+
+    /// Launched again while running (double-click in Finder, Spotlight ↩) —
+    /// same answer: point at the menu bar instead of doing nothing.
+    func applicationShouldHandleReopen(_ sender: NSApplication,
+                                       hasVisibleWindows: Bool) -> Bool {
+        showWelcome()
+        return true
+    }
+
+    func showWelcome() {
+        if welcome == nil {
+            let host = NSHostingController(
+                rootView: WelcomeView(model: model) { [weak self] in
+                    self?.welcome?.close()
+                })
+            let w = NSWindow(contentViewController: host)
+            w.styleMask = [.titled, .closable, .fullSizeContentView]
+            w.titleVisibility = .hidden
+            w.titlebarAppearsTransparent = true
+            w.isReleasedWhenClosed = false
+            w.title = "ShotScribe"
+            welcome = w
+        }
+        welcome?.center()
+        welcome?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+/// "You just launched a menu bar app" — shown on first run and on reopen.
+struct WelcomeView: View {
+    @ObservedObject var model: AppModel
+    var onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(nsImage: NSApp.applicationIconImage ?? NSImage())
+                .resizable().frame(width: 84, height: 84)
+            Text("ShotScribe lives in your menu bar")
+                .font(.title2.weight(.semibold))
+            Label {
+                Text("Look for this icon at the top-right of your screen — click it for settings and history.")
+            } icon: {
+                Image(systemName: "text.viewfinder")
+            }
+            .font(.callout)
+            .frame(maxWidth: 360, alignment: .leading)
+
+            VStack(alignment: .leading, spacing: 8) {
+                row(icon: "folder",
+                    text: "Watching **\(model.folder.lastPathComponent)** — new screenshots get renamed to “date + what they show.”")
+                row(icon: model.claudeAvailable ? "sparkles" : "keyboard",
+                    text: model.claudeAvailable
+                        ? "Titles come from your local Claude; only the text read off the image is sent."
+                        : "Titles come from the offline titler (install Claude Code for sharper ones).")
+            }
+            .frame(maxWidth: 360, alignment: .leading)
+
+            HStack {
+                Button("Choose another folder…") { model.chooseFolder() }
+                Spacer()
+                Button("Got it") { onClose() }
+                    .keyboardShortcut(.defaultAction)
+            }
+            .frame(maxWidth: 360)
+        }
+        .padding(28)
+        .frame(width: 430)
+    }
+
+    private func row(icon: String, text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: icon).frame(width: 18).foregroundStyle(.secondary)
+            Text(.init(text)).font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
 }
 
 /// ShotScribe — the menu bar face of the engine. A small always-there panel:
@@ -73,10 +160,11 @@ struct PanelView: View {
 
     private var toggles: some View {
         VStack(alignment: .leading, spacing: 6) {
+            folderRow
             Toggle(isOn: $model.watching) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Auto-rename new screenshots")
-                    Text("Watches the capture folder; only default “Screenshot …” names are touched.")
+                    Text("Watches the folder above; only default “Screenshot …” names are touched.")
                         .font(.caption2).foregroundStyle(.secondary)
                 }
             }
@@ -90,9 +178,36 @@ struct PanelView: View {
                 }
             }
             .disabled(!model.claudeAvailable)
+            Toggle(isOn: Binding(
+                get: { model.launchAtLogin },
+                set: { model.setLaunchAtLogin($0) }
+            )) {
+                Text("Launch at login")
+            }
         }
         .toggleStyle(.switch)
         .controlSize(.small)
+    }
+
+    private var folderRow: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "folder").foregroundStyle(.secondary)
+            Text(model.folder.lastPathComponent)
+                .font(.caption).lineLimit(1).truncationMode(.middle)
+                .help(model.folder.path)
+            if model.usesCustomFolder {
+                Button {
+                    model.useSystemFolder()
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                .buttonStyle(.plain).controlSize(.mini)
+                .help("Back to the system screenshot folder")
+            }
+            Spacer()
+            Button("Change…") { model.chooseFolder() }
+                .controlSize(.mini)
+        }
     }
 
     private var actions: some View {
