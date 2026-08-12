@@ -84,9 +84,12 @@ caller is already a model, the server stays mechanical.
 ## Menu bar app
 
 `ShotScribe.app` is the always-there face: a menu bar panel with an
-auto-rename watch toggle, a Claude/offline titler switch, "Rename latest
-capture now", and a history of recent renames. Activity logs to
-`~/Library/Logs/ShotScribe.log`.
+auto-rename watch toggle, a **configurable watch folder** ("Change…" — defaults
+to your macOS screenshot location), a Claude/offline titler switch, **launch at
+login**, "Rename latest capture now", and a history of recent renames. First
+launch (and relaunching from Spotlight) shows a welcome window pointing at the
+menu bar — a menu-bar-only app should never look like "nothing happened."
+Activity logs to `~/Library/Logs/ShotScribe.log`.
 
 ```bash
 ./scripts/package-app.sh     # → dist/ShotScribe.app (ad-hoc signed, no Dock icon)
@@ -108,8 +111,10 @@ inference on Anthropic's servers, billed to your Claude subscription).
 - [x] Core engine + CLI (`rename` / `label` / `watch`)
 - [x] MCP server target (`shotscribe-mcp`) — Claude Code / Cowork call it as tools
 - [x] `MenuBarExtra` app — the always-there local UI (`scripts/package-app.sh`)
+- [x] App icon, welcome window, configurable folder, launch at login
+- [ ] Backlog sweep — rename captures that landed while the app wasn't running
 - [ ] WidgetKit widget — a one-tap App Intent front door
-- [ ] Launch at login (`SMAppService`) + notarized distribution
+- [ ] Notarized distribution
 
 ## Why this exists
 

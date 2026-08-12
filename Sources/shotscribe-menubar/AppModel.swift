@@ -1,5 +1,7 @@
 import Foundation
 import SwiftUI
+import AppKit
+import ServiceManagement
 import ShotScribeCore
 
 /// One rename the app performed — shown in the panel's history.
@@ -43,8 +45,68 @@ final class AppModel: ObservableObject {
     @Published private(set) var busy = false
 
     let claudeAvailable = ClaudeTitler.isAvailable()
-    let folder = FolderWatcher.defaultScreenshotDirectory()
     private var watcher: FolderWatcher?
+
+    static let folderKey = "shotscribe.folder"
+
+    /// Where new captures are expected. Defaults to the macOS screenshot
+    /// location; the panel's "Change…" points it anywhere.
+    @Published private(set) var folder: URL = {
+        if let path = UserDefaults.standard.string(forKey: AppModel.folderKey) {
+            return URL(fileURLWithPath: path)
+        }
+        return FolderWatcher.defaultScreenshotDirectory()
+    }()
+
+    /// True when the operator picked a custom folder (shows the reset arrow).
+    var usesCustomFolder: Bool {
+        UserDefaults.standard.string(forKey: Self.folderKey) != nil
+    }
+
+    /// NSOpenPanel → new watch folder, persisted; the watcher re-arms on it.
+    func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = folder
+        panel.prompt = "Watch This Folder"
+        panel.message = "ShotScribe renames new screenshots that land in this folder."
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        UserDefaults.standard.set(url.path, forKey: Self.folderKey)
+        setFolder(url)
+    }
+
+    /// Back to the system screenshot location (`com.apple.screencapture`).
+    func useSystemFolder() {
+        UserDefaults.standard.removeObject(forKey: Self.folderKey)
+        setFolder(FolderWatcher.defaultScreenshotDirectory())
+    }
+
+    private func setFolder(_ url: URL) {
+        folder = url
+        Log.write("watch folder → \(url.path)")
+        stopWatcher()
+        if watching { startWatcher() }
+    }
+
+    // MARK: - Launch at login
+
+    /// SMAppService only works from a real .app bundle; from `swift run` the
+    /// register call throws and the error surfaces in the panel.
+    var launchAtLogin: Bool { SMAppService.mainApp.status == .enabled }
+
+    func setLaunchAtLogin(_ on: Bool) {
+        do {
+            if on { try SMAppService.mainApp.register() }
+            else { try SMAppService.mainApp.unregister() }
+            lastError = nil
+        } catch {
+            lastError = "Launch at login: \(error.localizedDescription)"
+        }
+        objectWillChange.send()
+    }
 
     init() {
         let ud = UserDefaults.standard
