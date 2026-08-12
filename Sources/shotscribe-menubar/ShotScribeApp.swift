@@ -73,8 +73,16 @@ struct WelcomeView: View {
                     text: "Watching **\(model.folder.lastPathComponent)** — new screenshots get renamed to “date + what they show.”")
                 row(icon: model.claudeAvailable ? "sparkles" : "keyboard",
                     text: model.claudeAvailable
-                        ? "Titles come from your local Claude; only the text read off the image is sent."
-                        : "Titles come from the offline titler (install Claude Code for sharper ones).")
+                        ? "Titles use **your own Claude Code account** — ShotScribe ships no keys and sends only the text read off the image."
+                        : "Titles come from the offline titler. Install **Claude Code** and sign in for sharper ones — on your own account, no keys involved.")
+                if !model.claudeAvailable {
+                    HStack {
+                        Spacer().frame(width: 26)
+                        Link("Get Claude Code →",
+                             destination: URL(string: "https://claude.com/claude-code")!)
+                            .font(.caption)
+                    }
+                }
             }
             .frame(maxWidth: 360, alignment: .leading)
 
@@ -172,9 +180,14 @@ struct PanelView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Title with Claude")
                     Text(model.claudeAvailable
-                         ? "Sharper labels via the local claude CLI (only the OCR text is sent)."
-                         : "The claude CLI isn’t installed — using the offline titler.")
+                         ? "Uses your own Claude Code account — only the text read off the image is sent."
+                         : "Claude Code isn’t installed — using the offline titler.")
                         .font(.caption2).foregroundStyle(.secondary)
+                    if !model.claudeAvailable {
+                        Link("Get Claude Code — titles run on your own account",
+                             destination: URL(string: "https://claude.com/claude-code")!)
+                            .font(.caption2)
+                    }
                 }
             }
             .disabled(!model.claudeAvailable)

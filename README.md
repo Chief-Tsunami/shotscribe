@@ -15,6 +15,16 @@ It's one small, single-purpose tool. The logic lives in a reusable core
 (`ShotScribeCore`) so the same engine backs the CLI today and — next — an MCP
 server, a menu-bar app, and a widget.
 
+## Whose Claude is it?
+
+**Yours.** ShotScribe ships no API keys and has no account of its own. When
+Claude titling is on, it drives the `claude` CLI installed on *your* machine,
+which runs on *your* Claude subscription — the same one you use in your
+terminal. Install [Claude Code](https://claude.com/claude-code), run
+`claude` once to sign in, and ShotScribe picks it up automatically. No Claude
+Code? Everything still works with the offline keyword titler — just blunter
+labels.
+
 ## The "connect to Claude" part
 
 Titling is a swappable seam (`Titler`):
