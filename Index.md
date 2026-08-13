@@ -1,0 +1,27 @@
+# Index
+
+Map of the shotscribe repo, and which existing docs satisfy which CHRIS OP
+role (audited 2026-08-12).
+
+## CHRIS OP role mapping
+No pre-existing root-level doc matched a CHRIS OP equivalence (`STATE.md`,
+`HISTORY.md`/`SESSIONS.md`, `ROADMAP.md`, `MEMORY.md`) — none of those
+existed. Only `README.md` was present at root; it is a project README, not
+a role-equivalent file, though its "Roadmap" section overlapped with the
+new `Roadmap.md` (seeded from it) and its opening paragraphs overlapped
+with `Context.md`. All seven CHRIS OP files plus `Hook.md` were created
+fresh by this audit — see SUGGESTED-OMISSIONS in the audit report for
+where README.md now duplicates them.
+
+## Repo layout
+- `README.md` — project overview, install/usage, MCP + skill docs.
+- `Package.swift` — Swift package manifest; 4 targets (see `Skills.md`).
+- `Sources/ShotScribeCore/` — shared engine (OCR, rename logic, Titler seam).
+- `Sources/shotscribe/` — CLI entry point.
+- `Sources/shotscribe-mcp/` — MCP server (stdio) exposing the engine as tools.
+- `Sources/shotscribe-menubar/` — MenuBarExtra app.
+- `Tests/ShotScribeCoreTests/` — unit tests for the core.
+- `scripts/` — `package-app.sh` (build/sign/notarize/staple), `make-icon.swift`.
+- `assets/` — app icon source (`.iconset` + `.icns`).
+- `skills/screenshot/SKILL.md` — the installable `/screenshot` Claude Code skill.
+- `dist/` — build output (`.app`, `.dmg`); gitignored, not tracked.

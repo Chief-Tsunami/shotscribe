@@ -1,0 +1,26 @@
+# Skills
+
+Skills, slash commands, and workflows used by or on this repo.
+
+## Produced by this repo
+- `skills/screenshot/SKILL.md` — the `/screenshot` gesture this repo ships
+  to other Claude Code users. Installed via curl into
+  `~/.claude/skills/screenshot/SKILL.md` (see README's "The /screenshot
+  skill" section).
+- `shotscribe-mcp` — not a skill, but registers as an MCP server
+  (`claude mcp add shotscribe -- .build/release/shotscribe-mcp`) exposing
+  `latest_screenshots`, `ocr_screenshot`, `rename_screenshot` as tools any
+  Claude Code session can call.
+
+## Build / dev commands
+- `swift build -c release` — build all targets.
+- `swift test` — run `Tests/ShotScribeCoreTests`.
+- `./scripts/package-app.sh` — bundle `shotscribe-menubar` into
+  `dist/ShotScribe.app`; `APPLE_NOTARY_PROFILE=<profile>` runs the full
+  sign/notarize/staple pipeline (mirrors Navi's ship stage).
+- `scripts/make-icon.swift` — regenerates the app icon assets.
+
+## Global skills relevant to this repo
+- TODO: no project-local `.claude/` skill config found in this repo —
+  confirm whether any global skills (e.g. `/save`) are used routinely when
+  working here.
