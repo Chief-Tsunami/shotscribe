@@ -5,20 +5,25 @@ import ServiceManagement
 import ShotScribeCore
 
 /// One rename the app performed — shown in the panel's history.
-struct RenameEvent: Codable, Identifiable, Equatable {
-    var id = UUID()
-    var date: Date
-    var from: String
-    var to: String
+public struct RenameEvent: Codable, Identifiable, Equatable {
+    public var id = UUID()
+    public var date: Date
+    public var from: String
+    public var to: String
 }
 
-/// The menu bar app's state: the watch toggle (wraps `FolderWatcher`), the
-/// titler preference, and a small persisted history of renames.
+/// ShotScribe's state: the watch toggle (wraps `FolderWatcher`), the titler
+/// preference, and a small persisted history of renames.
+///
+/// Lives in `ShotScribeUI` rather than in the menu bar executable so anything
+/// that wants to host ShotScribe's face can — the executable is one consumer,
+/// not the owner. Per the repo's doctrine this package knows nothing about who
+/// that host might be.
 ///
 /// `ObservableObject` (not `@Observable`) on purpose — keeps the package's
 /// macOS 13 floor for open-source reach.
 @MainActor
-final class AppModel: ObservableObject {
+public final class ShotScribeModel: ObservableObject {
     static let watchingKey = "shotscribe.watching"
     static let useClaudeKey = "shotscribe.useClaude"
     static let eventsKey = "shotscribe.events"
@@ -26,45 +31,45 @@ final class AppModel: ObservableObject {
 
     /// Auto-rename new captures as they land. ON by default: launching an app
     /// whose one job is renaming screenshots is the opt-in.
-    @Published var watching: Bool {
+    @Published public var watching: Bool {
         didSet {
-            UserDefaults.standard.set(watching, forKey: Self.watchingKey)
+            Self.defaults.set(watching, forKey: Self.watchingKey)
             watching ? startWatcher() : stopWatcher()
         }
     }
 
     /// Title via the local `claude` CLI (sharper labels) vs the offline
     /// keyword titler. Only meaningful when `claudeAvailable`.
-    @Published var useClaude: Bool {
-        didSet { UserDefaults.standard.set(useClaude, forKey: Self.useClaudeKey) }
+    @Published public var useClaude: Bool {
+        didSet { Self.defaults.set(useClaude, forKey: Self.useClaudeKey) }
     }
 
-    @Published private(set) var events: [RenameEvent] = []
-    @Published private(set) var lastError: String?
+    @Published public private(set) var events: [RenameEvent] = []
+    @Published public private(set) var lastError: String?
     /// True while a rename (OCR + titling) is in flight — the panel shows a spinner.
-    @Published private(set) var busy = false
+    @Published public private(set) var busy = false
 
-    let claudeAvailable = ClaudeTitler.isAvailable()
+    public let claudeAvailable = ClaudeTitler.isAvailable()
     private var watcher: FolderWatcher?
 
-    static let folderKey = "shotscribe.folder"
+    public static let folderKey = "shotscribe.folder"
 
     /// Where new captures are expected. Defaults to the macOS screenshot
     /// location; the panel's "Change…" points it anywhere.
-    @Published private(set) var folder: URL = {
-        if let path = UserDefaults.standard.string(forKey: AppModel.folderKey) {
+    @Published public private(set) var folder: URL = {
+        if let path = ShotScribeModel.defaults.string(forKey: ShotScribeModel.folderKey) {
             return URL(fileURLWithPath: path)
         }
         return FolderWatcher.defaultScreenshotDirectory()
     }()
 
     /// True when the operator picked a custom folder (shows the reset arrow).
-    var usesCustomFolder: Bool {
-        UserDefaults.standard.string(forKey: Self.folderKey) != nil
+    public var usesCustomFolder: Bool {
+        Self.defaults.string(forKey: Self.folderKey) != nil
     }
 
     /// NSOpenPanel → new watch folder, persisted; the watcher re-arms on it.
-    func chooseFolder() {
+    public func chooseFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -74,13 +79,13 @@ final class AppModel: ObservableObject {
         panel.message = "ShotScribe renames new screenshots that land in this folder."
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        UserDefaults.standard.set(url.path, forKey: Self.folderKey)
+        Self.defaults.set(url.path, forKey: Self.folderKey)
         setFolder(url)
     }
 
     /// Back to the system screenshot location (`com.apple.screencapture`).
-    func useSystemFolder() {
-        UserDefaults.standard.removeObject(forKey: Self.folderKey)
+    public func useSystemFolder() {
+        Self.defaults.removeObject(forKey: Self.folderKey)
         setFolder(FolderWatcher.defaultScreenshotDirectory())
     }
 
@@ -95,9 +100,9 @@ final class AppModel: ObservableObject {
 
     /// SMAppService only works from a real .app bundle; from `swift run` the
     /// register call throws and the error surfaces in the panel.
-    var launchAtLogin: Bool { SMAppService.mainApp.status == .enabled }
+    public var launchAtLogin: Bool { SMAppService.mainApp.status == .enabled }
 
-    func setLaunchAtLogin(_ on: Bool) {
+    public func setLaunchAtLogin(_ on: Bool) {
         do {
             if on { try SMAppService.mainApp.register() }
             else { try SMAppService.mainApp.unregister() }
@@ -108,8 +113,8 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
-    init() {
-        let ud = UserDefaults.standard
+    public init() {
+        let ud = Self.defaults
         watching = ud.object(forKey: Self.watchingKey) == nil
             ? true : ud.bool(forKey: Self.watchingKey)
         useClaude = ud.object(forKey: Self.useClaudeKey) == nil
@@ -118,13 +123,82 @@ final class AppModel: ObservableObject {
            let saved = try? JSONDecoder().decode([RenameEvent].self, from: data) {
             events = saved
         }
+        refreshOtherInstance()
+        observeOtherInstances()
         if watching { startWatcher() }
+    }
+
+    // MARK: - Not stepping on another copy of ourselves
+
+    /// True when ShotScribe.app is running in some *other* process — i.e. this
+    /// model is hosted somewhere else (a shell that mounts the surface) while
+    /// the standalone app is also alive.
+    ///
+    /// Two live `FolderWatcher`s on one folder both fire on the same new
+    /// capture and both try to rename it; one wins, the other errors on a file
+    /// that no longer exists, and which is which is a coin flip. So the hosted
+    /// copy stands down rather than racing.
+    @Published public private(set) var otherInstanceRunning = false
+
+    private static let appBundleID = "com.joshvanorden.shotscribe"
+    private var runningAppsObservation: NSKeyValueObservation?
+
+    /// ShotScribe's settings belong to ShotScribe, not to whatever process
+    /// happens to be hosting it.
+    ///
+    /// Inside ShotScribe.app this is just `.standard`. Anywhere else it is the
+    /// same preferences domain reached by name, so a hosted copy sees the
+    /// folder you actually chose and the history you actually have. Without
+    /// this, a host with its own bundle id starts blank — and starts renaming
+    /// files in a folder you never pointed it at.
+    ///
+    /// (Reached via `suiteName` only from outside; Apple warns against naming
+    /// your own bundle id as a suite from within it, which the branch avoids.)
+    static let defaults: UserDefaults = {
+        Bundle.main.bundleIdentifier == appBundleID
+            ? .standard
+            : (UserDefaults(suiteName: appBundleID) ?? .standard)
+    }()
+
+    private func refreshOtherInstance() {
+        let me = Bundle.main.bundleIdentifier
+        otherInstanceRunning = NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == Self.appBundleID && $0.bundleIdentifier != me
+        }
+    }
+
+    /// Re-check when apps come and go, so quitting ShotScribe.app hands the
+    /// folder back without needing a restart here.
+    ///
+    /// KVO on `runningApplications` rather than the workspace's
+    /// didLaunch/didTerminate notifications: ShotScribe.app is `LSUIElement`,
+    /// and those notifications did not arrive for it. `runningApplications` is
+    /// documented KVO-compliant and does see accessory apps.
+    private func observeOtherInstances() {
+        runningAppsObservation = NSWorkspace.shared.observe(\.runningApplications) { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let was = self.otherInstanceRunning
+                self.refreshOtherInstance()
+                guard was != self.otherInstanceRunning else { return }
+                if self.otherInstanceRunning {
+                    self.stopWatcher()
+                } else if self.watching {
+                    self.lastError = nil
+                    self.startWatcher()
+                }
+            }
+        }
     }
 
     // MARK: - Watching
 
     private func startWatcher() {
         guard watcher == nil else { return }
+        guard !otherInstanceRunning else {
+            lastError = "ShotScribe.app is already watching this folder — quit it to rename from here."
+            return
+        }
         let w = FolderWatcher(directory: folder) { url in
             // A capture can land before macOS finishes writing it (the floating
             // thumbnail lingers) — give the file a beat before reading.
@@ -152,7 +226,7 @@ final class AppModel: ObservableObject {
         (useClaude && claudeAvailable) ? ClaudeTitler() : KeywordTitler()
     }
 
-    func rename(_ url: URL) async {
+    public func rename(_ url: URL) async {
         busy = true
         defer { busy = false }
         do {
@@ -188,7 +262,7 @@ final class AppModel: ObservableObject {
 
     /// The panel's "Rename latest now" — newest raw capture still wearing its
     /// default name. nil-safe: does nothing when everything's already tidy.
-    func renameLatest() {
+    public func renameLatest() {
         let imageExts: Set<String> = ["png", "jpg", "jpeg", "heic", "tiff"]
         let candidates = ((try? FileManager.default.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: [.contentModificationDateKey],
@@ -211,7 +285,7 @@ final class AppModel: ObservableObject {
         events.insert(RenameEvent(date: Date(), from: from, to: to), at: 0)
         if events.count > Self.maxEvents { events.removeLast(events.count - Self.maxEvents) }
         if let data = try? JSONEncoder().encode(events) {
-            UserDefaults.standard.set(data, forKey: Self.eventsKey)
+            Self.defaults.set(data, forKey: Self.eventsKey)
         }
     }
 }

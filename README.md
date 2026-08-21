@@ -126,6 +126,39 @@ open dist/ShotScribe.app
 Auto-rename is ON by default — launching an app whose one job is renaming
 screenshots is the opt-in; the toggle is right there in the panel.
 
+## Mounting the face somewhere else
+
+The panel is a library, not a private part of the app. `ShotScribeUI` exposes
+one view:
+
+```swift
+import ShotScribeUI
+
+ShotScribeSurface(chrome: .hosted)   // roomy detail pane
+ShotScribeSurface(chrome: .menuBar)  // the 340pt popover
+```
+
+It owns its own state, takes no other arguments, and knows nothing about what's
+hosting it. `.hosted` omits "Launch at login" and "Quit" on purpose —
+`SMAppService.mainApp` and `NSApplication.shared.terminate` would act on the
+*host*, not on ShotScribe.
+
+Two things a host gets for free, because they're ShotScribe's job and not the
+host's:
+
+- **Your settings come with it.** The surface reads the
+  `com.joshvanorden.shotscribe` preferences domain by name, so a copy running
+  inside another app sees the watch folder you actually chose and the history
+  you actually have — rather than starting blank and renaming files somewhere
+  you never pointed it at.
+- **It won't fight ShotScribe.app.** Two live watchers would race to rename the
+  same capture. A hosted copy notices the standalone app running, says so, and
+  stands down until you quit it.
+
+[Toolbelt](https://github.com/Chief-Tsunami/toolbelt) mounts it this way; its
+whole integration is a twenty-line adapter. ShotScribe has no dependency on
+Toolbelt and never will.
+
 ## Privacy
 
 OCR runs entirely on-device (Apple Vision). Only the *extracted text* is sent
@@ -139,9 +172,11 @@ inference on Anthropic's servers, billed to your Claude subscription).
 - [x] MCP server target (`shotscribe-mcp`) — Claude Code / Cowork call it as tools
 - [x] `MenuBarExtra` app — the always-there local UI (`scripts/package-app.sh`)
 - [x] App icon, welcome window, configurable folder, launch at login
+- [x] Notarized distribution — Developer ID signed, notarized, stapled (app + DMG)
+- [x] `/screenshot` skill — the gesture, for any Claude Code user
+- [x] `ShotScribeUI` — the face as a mountable library, so any shell can host it
 - [ ] Backlog sweep — rename captures that landed while the app wasn't running
 - [ ] WidgetKit widget — a one-tap App Intent front door
-- [ ] Notarized distribution
 
 ## Why this exists
 

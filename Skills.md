@@ -14,7 +14,8 @@ Skills, slash commands, and workflows used by or on this repo.
 
 ## Build / dev commands
 - `swift build -c release` — build all targets.
-- `swift test` — run `Tests/ShotScribeCoreTests`.
+- `swift test` — run `Tests/ShotScribeCoreTests`. Green as of 2026-08-20:
+  13 tests, 0 failures.
 - `./scripts/package-app.sh` — bundle `shotscribe-menubar` into
   `dist/ShotScribe.app`; `APPLE_NOTARY_PROFILE=<profile>` runs the full
   sign/notarize/staple pipeline (mirrors Navi's ship stage).
