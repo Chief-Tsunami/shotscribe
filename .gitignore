@@ -4,3 +4,6 @@
 DerivedData/
 .DS_Store
 dist/
+
+# Local planning only — roadmap stays out of the repo (see Hook.md)
+/roadmap.md
