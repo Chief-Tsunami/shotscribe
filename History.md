@@ -36,3 +36,36 @@ Accepted, `spctl` reports "source=Notarized Developer ID".
 Shipped `skills/screenshot/SKILL.md`, a generic "see my newest screenshot"
 gesture for any Claude Code user. Completes the fourth door to the engine
 (CLI, MCP, menu bar, skill).
+
+## 2026-08-20 — Extracted the face (`ShotScribeUI`)
+ShotScribe had four doors to one engine, but the *face* wasn't one of them:
+`AppModel` and `PanelView` lived inside the `shotscribe-menubar` executable, so
+nothing else could host it. Toolbelt wanted to admit ShotScribe and had nothing
+to mount.
+
+- New `ShotScribeUI` target: `ShotScribeModel` (was `AppModel`, now public) and
+  `ShotScribeSurface` / `ShotScribeView` (was `PanelView`). `Log` moved with
+  them. `shotscribe-menubar` keeps only the `@main`, the app delegate, and the
+  welcome window, and is now a consumer of the library.
+- `ShotScribeChrome` — `.menuBar` draws the 340pt popover with "Launch at
+  login" and "Quit"; `.hosted` draws a roomy detail pane without them, because
+  `SMAppService.mainApp` and `NSApplication.shared.terminate` would act on
+  whatever is hosting, not on ShotScribe. One view, two rooms, rather than two
+  views that drift.
+- **Settings follow the tool, not the host.** `ShotScribeModel.defaults` reads
+  the `com.joshvanorden.shotscribe` domain by name whenever `Bundle.main` is
+  something else; inside ShotScribe.app it is `.standard`, so nothing migrated.
+  Caught before shipping: without it, a belt-mounted copy read empty defaults
+  and would have started renaming in the *system* screenshot folder instead of
+  `~/Pictures/Navi Screenshots`.
+- **Two watchers never race.** A hosted copy detects a running ShotScribe.app
+  and stands down with a banner (watch toggle and rename action disabled),
+  resuming automatically when it quits. First implemented with the workspace
+  didLaunch/didTerminate notifications, which never fired — ShotScribe.app is
+  `LSUIElement`. Switched to KVO on `NSWorkspace.runningApplications`, which is
+  documented KVO-compliant and does see accessory apps.
+- No engine changes: `ShotScribeCore` is untouched.
+- Verified by hand (the suite can't run — see `Phase.md`): clean rebuild, the
+  menu bar popover still opens and shows the real history, and the belt-hosted
+  pane shows the right folder, the real history, and the stand-down banner
+  appearing and clearing as ShotScribe.app starts and quits.

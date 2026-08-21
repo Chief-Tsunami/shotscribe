@@ -15,11 +15,15 @@ where README.md now duplicates them.
 
 ## Repo layout
 - `README.md` — project overview, install/usage, MCP + skill docs.
-- `Package.swift` — Swift package manifest; 4 targets (see `Skills.md`).
+- `Package.swift` — Swift package manifest; 5 targets (see `Skills.md`).
 - `Sources/ShotScribeCore/` — shared engine (OCR, rename logic, Titler seam).
 - `Sources/shotscribe/` — CLI entry point.
 - `Sources/shotscribe-mcp/` — MCP server (stdio) exposing the engine as tools.
-- `Sources/shotscribe-menubar/` — MenuBarExtra app.
+- `Sources/ShotScribeUI/` — the face as a mountable library: `ShotScribeModel`
+  (state, watcher, shared preferences domain, other-instance detection),
+  `ShotScribeSurface` / `ShotScribeView` (one view, two chrome modes), `Log`.
+- `Sources/shotscribe-menubar/` — MenuBarExtra app: the `@main`, the app
+  delegate, and the welcome window. Draws `ShotScribeView(chrome: .menuBar)`.
 - `Tests/ShotScribeCoreTests/` — unit tests for the core.
 - `scripts/` — `package-app.sh` (build/sign/notarize/staple), `make-icon.swift`.
 - `assets/` — app icon source (`.iconset` + `.icns`).
