@@ -123,6 +123,10 @@ public final class ShotScribeModel: ObservableObject {
            let saved = try? JSONDecoder().decode([RenameEvent].self, from: data) {
             events = saved
         }
+        if let raw = ud.string(forKey: "shotView"), let v = ShotView(rawValue: raw) {
+            shotView = v
+        }
+        loadIndex()
         refreshOtherInstance()
         observeOtherInstances()
         if watching { startWatcher() }
@@ -291,6 +295,20 @@ public final class ShotScribeModel: ObservableObject {
 
     // MARK: - Search
 
+    /// How the shots are shown. Two views because they answer different
+    /// questions: the list answers "what did I just capture", the tiles answer
+    /// "which one was it" — and for a screenshot, recognition beats reading.
+    public enum ShotView: String, CaseIterable, Identifiable, Sendable {
+        case list, tiles
+        public var id: String { rawValue }
+        public var label: String { self == .list ? "List" : "Tiles" }
+        public var symbol: String { self == .list ? "list.bullet" : "square.grid.2x2" }
+    }
+
+    @Published var shotView: ShotView = .tiles {
+        didSet { Self.defaults.set(shotView.rawValue, forKey: "shotView") }
+    }
+
     @Published var query: String = ""
     @Published private(set) var hits: [SearchHit] = []
     @Published private(set) var indexing = false
@@ -299,7 +317,30 @@ public final class ShotScribeModel: ObservableObject {
     /// The index is the only durable record of what a screenshot SAID. The
     /// rename history is capped and holds filenames, so search reads the index
     /// and the index reads the folder.
-    var indexedCount: Int { ShotIndex.load().shots.count }
+    var indexedCount: Int { indexCache.count }
+
+    /// The index, held in memory. Every keystroke reloading a 173KB file from
+    /// disk is the kind of thing that feels fine at 125 screenshots and terrible
+    /// at 2,000.
+    @Published private(set) var indexCache: [IndexedShot] = []
+
+    func loadIndex() {
+        let shots = ShotIndex.load().shots.values.sorted { $0.captured > $1.captured }
+        indexCache = shots
+    }
+
+    /// What the views show: search hits when searching, the whole corpus
+    /// otherwise. The index doubles as the browser — it is the only thing that
+    /// knows every shot, since the rename history is capped.
+    var visibleShots: [IndexedShot] {
+        query.trimmingCharacters(in: .whitespaces).isEmpty
+            ? indexCache
+            : hits.map(\.shot)
+    }
+
+    func snippet(for shot: IndexedShot) -> String? {
+        hits.first { $0.shot.path == shot.path }?.snippet
+    }
 
     func runSearch() {
         let q = query
@@ -324,14 +365,16 @@ public final class ShotScribeModel: ObservableObject {
             await MainActor.run {
                 self?.indexing = false
                 self?.indexProgress = nil
+                self?.loadIndex()
                 self?.runSearch()
             }
         }
     }
 
-    func reveal(_ hit: SearchHit) {
-        NSWorkspace.shared.activateFileViewerSelecting([hit.shot.url])
+    func reveal(_ shot: IndexedShot) {
+        NSWorkspace.shared.activateFileViewerSelecting([shot.url])
     }
+    func reveal(_ hit: SearchHit) { reveal(hit.shot) }
 
     private func record(from: String, to: String) {
         events.insert(RenameEvent(date: Date(), from: from, to: to), at: 0)

@@ -101,14 +101,17 @@ public struct ShotScribeView: View {
                     }
                     .padding(4)
                 }
+                .frame(maxWidth: 620, alignment: .leading)
                 HStack {
                     renameAction
                     Spacer()
                     Button("Open folder") { NSWorkspace.shared.open(model.folder) }
                 }
+                .frame(maxWidth: 620, alignment: .leading)
                 errorLine
                 searchBlock
-                if model.events.isEmpty {
+                shotsBlock
+                if model.visibleShots.isEmpty && model.events.isEmpty {
                     Text("Nothing renamed yet. New captures that land in the folder above get a name that says what they show.")
                         .font(.callout).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -117,7 +120,12 @@ public struct ShotScribeView: View {
                 }
             }
             .padding(22)
-            .frame(maxWidth: 620, alignment: .leading)
+            // The controls stay in a readable column; the SHOTS get the window.
+            // This pane used to cap everything at 620pt, so on a 1200pt window
+            // the scrollbar sat at the pane edge while the content stopped well
+            // short of it — the whole surface read as a narrow page floating in
+            // dead space.
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
@@ -159,43 +167,103 @@ public struct ShotScribeView: View {
                         Button("Re-read folder") { model.rebuildIndex() }
                             .controlSize(.small)
                     }
-                } else if model.hits.isEmpty {
+                } else if model.visibleShots.isEmpty {
                     Text("Nothing matched. Captures taken before the index was built need one pass — use Re-read folder.")
                         .font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else {
-                    ForEach(model.hits.prefix(8)) { hit in
-                        Button { model.reveal(hit) } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    // A hit in the name is a hit in the one part
-                                    // somebody chose on purpose.
-                                    if hit.matchedInName {
-                                        Image(systemName: "tag.fill")
-                                            .font(.system(size: 8)).foregroundStyle(.tint)
-                                    }
-                                    Text(hit.shot.name).font(.callout.weight(.medium))
-                                        .lineLimit(1)
-                                }
-                                if !hit.snippet.isEmpty {
-                                    Text(hit.snippet).font(.caption)
-                                        .foregroundStyle(.secondary).lineLimit(2)
-                                }
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Reveal in Finder")
-                        if hit.id != model.hits.prefix(8).last?.id { Divider() }
-                    }
-                    if model.hits.count > 8 {
-                        Text("+ \(model.hits.count - 8) more")
-                            .font(.caption).foregroundStyle(.tertiary)
-                    }
                 }
             }
             .padding(4)
+        }
+        .frame(maxWidth: 620, alignment: .leading)
+    }
+
+    /// The shots themselves, in whichever view is chosen.
+    ///
+    /// Both views read `visibleShots` — search hits when searching, the whole
+    /// indexed corpus otherwise — so the index doubles as the browser. The
+    /// rename history cannot do that job: it is capped and holds no paths.
+    @ViewBuilder
+    private var shotsBlock: some View {
+        if !model.visibleShots.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text(model.query.isEmpty
+                         ? "All screenshots"
+                         : "\(model.visibleShots.count) match\(model.visibleShots.count == 1 ? "" : "es")")
+                        .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("", selection: $model.shotView) {
+                        ForEach(ShotScribeModel.ShotView.allCases) { v in
+                            Image(systemName: v.symbol).tag(v).help(v.label)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .fixedSize()
+                }
+                switch model.shotView {
+                case .list:  shotsList
+                case .tiles: shotsTiles
+                }
+            }
+        }
+    }
+
+    private var shotsList: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            ForEach(model.visibleShots.prefix(300)) { shot in
+                Button { model.reveal(shot) } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text(shot.name).font(.callout.weight(.medium))
+                            .lineLimit(1).truncationMode(.middle)
+                            .frame(minWidth: 180, alignment: .leading)
+                        if let snip = model.snippet(for: shot), !snip.isEmpty {
+                            Text(snip).font(.caption).foregroundStyle(.secondary)
+                                .lineLimit(1).truncationMode(.tail)
+                        }
+                        Spacer(minLength: 8)
+                        Text(shot.captured, format: .dateTime.year().month().day())
+                            .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                    }
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(shot.path)
+                Divider()
+            }
+        }
+    }
+
+    private var shotsTiles: some View {
+        // Adaptive columns rather than a fixed count: the pane is 680pt on the
+        // belt and whatever the user drags it to standalone, and a fixed grid
+        // wastes exactly the space this change was meant to reclaim.
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 190, maximum: 280), spacing: 12)],
+                  alignment: .leading, spacing: 12) {
+            ForEach(model.visibleShots.prefix(300)) { shot in
+                Button { model.reveal(shot) } label: {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Thumbnail(path: shot.path)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(shot.name).font(.caption.weight(.medium))
+                                .lineLimit(1).truncationMode(.middle)
+                            Text(shot.captured, format: .dateTime.year().month().day())
+                                .font(.caption2).foregroundStyle(.tertiary)
+                        }
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .background(.quinary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(.separator, lineWidth: 1))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(shot.path)
+            }
         }
     }
 
