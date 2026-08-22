@@ -107,6 +107,7 @@ public struct ShotScribeView: View {
                     Button("Open folder") { NSWorkspace.shared.open(model.folder) }
                 }
                 errorLine
+                searchBlock
                 if model.events.isEmpty {
                     Text("Nothing renamed yet. New captures that land in the folder above get a name that says what they show.")
                         .font(.callout).foregroundStyle(.secondary)
@@ -119,6 +120,83 @@ public struct ShotScribeView: View {
             .frame(maxWidth: 620, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    /// Finding a screenshot by what it SAID.
+    ///
+    /// ShotScribe already reads every capture to name it; the index keeps that
+    /// text instead of discarding it. A three-word title is a thin hook a month
+    /// later — you remember the error message, not the label.
+    @ViewBuilder
+    private var searchBlock: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                    TextField("Search what your screenshots say…", text: $model.query)
+                        .textFieldStyle(.plain)
+                        .onSubmit { model.runSearch() }
+                        .onChange(of: model.query) { _ in model.runSearch() }
+                    if !model.query.isEmpty {
+                        Button { model.query = ""; model.runSearch() } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.tertiary)
+                    }
+                }
+
+                if model.indexing {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text(model.indexProgress.map { "Reading \($0.0) of \($0.1)…" } ?? "Reading…")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                } else if model.query.isEmpty {
+                    HStack(spacing: 8) {
+                        Text("\(model.indexedCount) screenshots indexed")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Re-read folder") { model.rebuildIndex() }
+                            .controlSize(.small)
+                    }
+                } else if model.hits.isEmpty {
+                    Text("Nothing matched. Captures taken before the index was built need one pass — use Re-read folder.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(model.hits.prefix(8)) { hit in
+                        Button { model.reveal(hit) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    // A hit in the name is a hit in the one part
+                                    // somebody chose on purpose.
+                                    if hit.matchedInName {
+                                        Image(systemName: "tag.fill")
+                                            .font(.system(size: 8)).foregroundStyle(.tint)
+                                    }
+                                    Text(hit.shot.name).font(.callout.weight(.medium))
+                                        .lineLimit(1)
+                                }
+                                if !hit.snippet.isEmpty {
+                                    Text(hit.snippet).font(.caption)
+                                        .foregroundStyle(.secondary).lineLimit(2)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Reveal in Finder")
+                        if hit.id != model.hits.prefix(8).last?.id { Divider() }
+                    }
+                    if model.hits.count > 8 {
+                        Text("+ \(model.hits.count - 8) more")
+                            .font(.caption).foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .padding(4)
+        }
     }
 
     /// The one thing a hosted copy must say out loud: it is deliberately not

@@ -183,3 +183,35 @@ inference on Anthropic's servers, billed to your Claude subscription).
 Extracted from a larger app ("Navi") as its own tool, on the theory that a
 handful of small, sharp, open-source tools beats one monolith — each easy to
 understand, iterate, and hand to Claude as a capability.
+
+## Finding a screenshot again
+
+ShotScribe reads every capture to name it. It now **keeps** that text instead of
+discarding it, so you can search what a screenshot *said* rather than what it got
+called — a three-word title is a thin hook a month later.
+
+```bash
+shotscribe index            # read the watched folder into the index
+shotscribe find "NXDOMAIN"  # search what they say
+```
+
+The search field in the app does the same thing, and new captures index
+themselves the moment they are renamed.
+
+Two deliberate choices:
+
+- **The index OCRs again rather than reusing the label's text.** Labelling uses
+  `.fast` recognition capped at 900 characters — right for a title, wrong for
+  search, since 900 characters stops partway down most screenshots and `.fast`
+  misreads exactly the strings you would search for (`i-0a3f`, `NXDOMAIN`,
+  `PROJ-4821`).
+- **It indexes the folder, not the rename history.** That history is capped and
+  holds no paths, so a search built on it would only ever see the last handful.
+
+### On sensitivity
+
+`~/.shotscribe/index.json` never leaves this machine, and it is **more sensitive
+than the screenshots it describes**. Tokens, hostnames and customer names get
+caught in captures in passing; in a PNG they are buried in pixels, and in an
+index they are greppable and durable. Keep it out of backups you would not trust
+with the screenshots themselves.

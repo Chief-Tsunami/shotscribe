@@ -252,6 +252,14 @@ public final class ShotScribeModel: ObservableObject {
             Log.write("outcome: \(outcome)")
             if case .renamed(let from, let to) = outcome {
                 record(from: from.lastPathComponent, to: to.lastPathComponent)
+                // Index it now, not at the next sweep: a screenshot you just
+                // took is exactly the one you are about to go looking for. The
+                // old path is dropped so a rename does not leave a second,
+                // stale entry pointing at a file that no longer exists.
+                Task.detached(priority: .utility) {
+                    ShotIndex.forget(from.path)
+                    ShotIndex.record(to)
+                }
                 if label != nil { lastError = nil }
             }
         } catch {
@@ -279,6 +287,50 @@ public final class ShotScribeModel: ObservableObject {
             return
         }
         Task { await rename(newest) }
+    }
+
+    // MARK: - Search
+
+    @Published var query: String = ""
+    @Published private(set) var hits: [SearchHit] = []
+    @Published private(set) var indexing = false
+    @Published private(set) var indexProgress: (Int, Int)?
+
+    /// The index is the only durable record of what a screenshot SAID. The
+    /// rename history is capped and holds filenames, so search reads the index
+    /// and the index reads the folder.
+    var indexedCount: Int { ShotIndex.load().shots.count }
+
+    func runSearch() {
+        let q = query
+        guard !q.trimmingCharacters(in: .whitespaces).isEmpty else { hits = []; return }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let found = ShotIndex.search(q)
+            await MainActor.run { self?.hits = found }
+        }
+    }
+
+    /// Read every screenshot in the watched folder into the index. Runs off the
+    /// main thread — accurate OCR over a few hundred files is seconds, not
+    /// milliseconds.
+    func rebuildIndex(force: Bool = false) {
+        guard !indexing else { return }
+        indexing = true
+        let folder = self.folder
+        Task.detached(priority: .utility) { [weak self] in
+            ShotIndex.reindex(folder: folder, force: force) { i, n in
+                Task { @MainActor in self?.indexProgress = (i, n) }
+            }
+            await MainActor.run {
+                self?.indexing = false
+                self?.indexProgress = nil
+                self?.runSearch()
+            }
+        }
+    }
+
+    func reveal(_ hit: SearchHit) {
+        NSWorkspace.shared.activateFileViewerSelecting([hit.shot.url])
     }
 
     private func record(from: String, to: String) {

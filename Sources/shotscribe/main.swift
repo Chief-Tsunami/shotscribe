@@ -43,11 +43,19 @@ USAGE:
   shotscribe label  [--no-claude] <file>            Print the title (no rename)
   shotscribe rename [--no-claude] [--dry-run] [--force] <file>
   shotscribe watch  [--no-claude] [dir]             Rename new captures as they land
+  shotscribe index  [--force] [dir]                 Read every screenshot into the search index
+  shotscribe find   <query>                         Search what your screenshots SAY, not just
+                                                    what they are called
 
 FLAGS:
   --no-claude   Use the offline keyword titler instead of `claude -p`
   --dry-run     Show the new name without moving the file
   --force       Rename even files you named yourself (default: macOS captures only)
+                For `index`: re-read files already indexed
+
+The index lives at ~/.shotscribe/index.json and never leaves this machine. It is
+more sensitive than the screenshots themselves — text caught in passing is
+greppable there in a way it is not inside a PNG.
 """
 
 var args = Array(CommandLine.arguments.dropFirst())
@@ -100,6 +108,40 @@ case "watch":
         FileHandle.standardError.write(Data("error: can't watch \(dir.path)\n".utf8)); exit(1)
     }
     dispatchMain()   // run forever
+
+case "index":
+    let force = args.contains("--force")
+    args.removeAll { $0 == "--force" }
+    let dir = positional.first.map(expand) ?? FolderWatcher.defaultScreenshotDirectory()
+    print("reading \(dir.path)")
+    let r = ShotIndex.reindex(folder: dir, force: force) { i, n in
+        if i % 10 == 0 || i == n {
+            FileHandle.standardError.write(Data("  \(i)/\(n)\r".utf8))
+        }
+    }
+    FileHandle.standardError.write(Data("\n".utf8))
+    print("indexed \(r.indexed) · already current \(r.skipped) · pruned \(r.pruned)")
+    print("index: \(ShotIndex.indexURL.path)")
+
+case "find":
+    let query = positional.joined(separator: " ")
+    if query.isEmpty {
+        FileHandle.standardError.write(Data("error: find needs something to look for\n".utf8))
+        exit(1)
+    }
+    let hits = ShotIndex.search(query)
+    guard !hits.isEmpty else {
+        print("nothing matched \"\(query)\". If the shots predate the index, run: shotscribe index")
+        exit(0)
+    }
+    let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
+    for h in hits.prefix(20) {
+        let mark = h.matchedInName ? "*" : " "
+        print("\(mark) \(fmt.string(from: h.shot.captured))  \(h.shot.name)")
+        if !h.snippet.isEmpty { print("     \(h.snippet)") }
+        print("     \(h.shot.path)")
+    }
+    if hits.count > 20 { print("… and \(hits.count - 20) more") }
 
 case "-h", "--help", "help":
     print(usage)
