@@ -89,11 +89,62 @@ public final class ShotScribeModel: ObservableObject {
         setFolder(FolderWatcher.defaultScreenshotDirectory())
     }
 
+    /// The folders worth one click. Desktop and Documents because that is where
+    /// macOS puts captures by default and where people move them; the third is
+    /// ShotScribe's own, created on demand so "somewhere tidy" needs no
+    /// decision.
+    public struct FolderChoice: Identifiable, Sendable {
+        public var id: String { url.path }
+        public var label: String
+        public var url: URL
+        public var creates: Bool
+    }
+
+    public static var quickFolders: [FolderChoice] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        return [
+            .init(label: "Desktop", url: home.appendingPathComponent("Desktop"), creates: false),
+            .init(label: "Documents", url: home.appendingPathComponent("Documents"), creates: false),
+            .init(label: "Screenshots", url: home.appendingPathComponent("Pictures/Screenshots"), creates: true),
+        ]
+    }
+
+    /// Point the watcher somewhere, creating the folder if this is the one we
+    /// offer to make. Returns false when the folder is not usable, rather than
+    /// silently watching nothing.
+    @discardableResult
+    public func use(_ choice: FolderChoice) -> Bool {
+        if choice.creates {
+            try? FileManager.default.createDirectory(at: choice.url, withIntermediateDirectories: true)
+        }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: choice.url.path, isDirectory: &isDir), isDir.boolValue else {
+            lastError = "\(choice.url.lastPathComponent) is not a folder ShotScribe can watch."
+            return false
+        }
+        setFolder(choice.url)
+        return true
+    }
+
+    /// Accept a folder dropped on the row. A file is taken as its containing
+    /// folder — dropping a screenshot to mean "watch where this lives" is the
+    /// obvious reading, and refusing it would be pedantry.
+    public func acceptDrop(_ url: URL) {
+        var isDir: ObjCBool = false
+        let exists = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir)
+        guard exists else { return }
+        setFolder(isDir.boolValue ? url : url.deletingLastPathComponent())
+    }
+
     private func setFolder(_ url: URL) {
         folder = url
         Log.write("watch folder → \(url.path)")
         stopWatcher()
         if watching { startWatcher() }
+        // A different folder is a different corpus: the index view must follow
+        // it, or search silently answers from the old one.
+        loadIndex()
+        hits = []
     }
 
     // MARK: - Launch at login

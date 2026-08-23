@@ -86,3 +86,17 @@ final class SearchIndexTests: XCTestCase {
         XCTAssertEqual(ShotIndex.search("findable", in: back).count, 1)
     }
 }
+
+/// The failure that made ShotScribe look broken when it was only logged out.
+final class ClaudeTitlerErrorTests: XCTestCase {
+    func testExpiredSessionGetsAnActionableMessage() {
+        let e = ClaudeTitler.CLIError.failed("Failed to authenticate: OAuth session expired and could not be refreshed")
+        XCTAssertEqual(e.errorDescription,
+                       "Claude is signed out — run `claude` in a terminal to sign in again.")
+    }
+
+    func testOtherFailuresKeepTheirText() {
+        let e = ClaudeTitler.CLIError.failed("model overloaded")
+        XCTAssertEqual(e.errorDescription, "Claude CLI: model overloaded")
+    }
+}

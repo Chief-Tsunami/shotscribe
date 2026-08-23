@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AppKit
 
 /// How much room the surface has, and therefore which controls make sense.
@@ -38,6 +39,7 @@ public struct ShotScribeSurface: View {
 public struct ShotScribeView: View {
     @ObservedObject var model: ShotScribeModel
     let chrome: ShotScribeChrome
+    @State private var folderTargeted = false
 
     public init(model: ShotScribeModel, chrome: ShotScribeChrome = .hosted) {
         self.model = model
@@ -92,24 +94,21 @@ public struct ShotScribeView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 if model.otherInstanceRunning { standDownBanner }
-                GroupBox {
-                    VStack(alignment: .leading, spacing: 10) {
-                        folderRow
-                        Divider()
-                        watchToggle
-                        claudeToggle
+                // Side by side when there is room, stacked when there is not.
+                // Each column keeps a readable measure — the width freed up here
+                // belongs to the shots, not to a settings row stretched across a
+                // 1500pt window.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 16) {
+                        controlsColumn.frame(width: 560)
+                        searchBlock.frame(width: 560)
                     }
-                    .padding(4)
+                    VStack(alignment: .leading, spacing: 18) {
+                        controlsColumn
+                        searchBlock
+                    }
                 }
-                .frame(maxWidth: 620, alignment: .leading)
-                HStack {
-                    renameAction
-                    Spacer()
-                    Button("Open folder") { NSWorkspace.shared.open(model.folder) }
-                }
-                .frame(maxWidth: 620, alignment: .leading)
                 errorLine
-                searchBlock
                 shotsBlock
                 if model.visibleShots.isEmpty && model.events.isEmpty {
                     Text("Nothing renamed yet. New captures that land in the folder above get a name that says what they show.")
@@ -128,6 +127,26 @@ public struct ShotScribeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var controlsColumn: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            GroupBox {
+                VStack(alignment: .leading, spacing: 10) {
+                    folderRow
+                    Divider()
+                    watchToggle
+                    claudeToggle
+                }
+                .padding(4)
+            }
+            HStack {
+                renameAction
+                Spacer()
+                Button("Open folder") { NSWorkspace.shared.open(model.folder) }
+            }
+        }
+        .frame(maxWidth: 620, alignment: .leading)
     }
 
     /// Finding a screenshot by what it SAID.
@@ -175,7 +194,6 @@ public struct ShotScribeView: View {
             }
             .padding(4)
         }
-        .frame(maxWidth: 620, alignment: .leading)
     }
 
     /// The shots themselves, in whichever view is chosen.
@@ -304,24 +322,65 @@ public struct ShotScribeView: View {
         }
     }
 
+    /// The watch folder, as a drop target with one-click alternatives.
+    ///
+    /// It was a label and a "Change…" button, which put a file picker between
+    /// you and a folder already open in Finder. Dropping the folder says the
+    /// same thing in one gesture, and the three named choices cover the places
+    /// captures actually live without opening anything.
     private var folderRow: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "folder").foregroundStyle(.secondary)
-            Text(model.folder.lastPathComponent)
-                .font(.caption).lineLimit(1).truncationMode(.middle)
-                .help(model.folder.path)
-            if model.usesCustomFolder {
-                Button {
-                    model.useSystemFolder()
-                } label: {
-                    Image(systemName: "arrow.counterclockwise")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: folderTargeted ? "folder.fill.badge.plus" : "folder")
+                    .foregroundStyle(folderTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(model.folder.lastPathComponent)
+                        .font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                    Text(folderTargeted ? "Drop to watch this folder" : model.folder.path)
+                        .font(.caption2).foregroundStyle(.tertiary)
+                        .lineLimit(1).truncationMode(.middle)
                 }
-                .buttonStyle(.plain).controlSize(.mini)
-                .help("Back to the system screenshot folder")
+                Spacer(minLength: 8)
+                if model.usesCustomFolder {
+                    Button { model.useSystemFolder() } label: {
+                        Image(systemName: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(.plain).controlSize(.small)
+                    .help("Back to the system screenshot folder")
+                }
+                Button("Browse…") { model.chooseFolder() }.controlSize(.small)
             }
-            Spacer()
-            Button("Change…") { model.chooseFolder() }
-                .controlSize(.mini)
+            .padding(9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(style: StrokeStyle(lineWidth: 1.2, dash: [5, 4]))
+                    .foregroundStyle(folderTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator)))
+            .contentShape(Rectangle())
+            .onDrop(of: [UTType.fileURL], isTargeted: $folderTargeted) { providers in
+                guard let p = providers.first else { return false }
+                _ = p.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    Task { @MainActor in model.acceptDrop(url) }
+                }
+                return true
+            }
+
+            HStack(spacing: 6) {
+                ForEach(ShotScribeModel.quickFolders) { c in
+                    Button {
+                        model.use(c)
+                    } label: {
+                        Text(c.label).font(.caption)
+                    }
+                    .controlSize(.small)
+                    .disabled(model.folder.path == c.url.path)
+                    .help(c.creates
+                          ? "\(c.url.path) — created if it does not exist"
+                          : c.url.path)
+                }
+                Spacer()
+            }
         }
     }
 

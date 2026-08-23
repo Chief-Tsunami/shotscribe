@@ -20,7 +20,15 @@ public struct ClaudeTitler: Titler {
             switch self {
             case .notFound: return "The Claude CLI (`claude`) isn't installed."
             case .empty:    return "The Claude CLI returned nothing."
-            case .failed(let m): return "Claude CLI: \(m)"
+            case .failed(let m):
+                // An expired session is the common case and has a specific fix,
+                // so it gets a specific sentence rather than a raw CLI line.
+                if m.localizedCaseInsensitiveContains("authenticate")
+                    || m.localizedCaseInsensitiveContains("oauth")
+                    || m.localizedCaseInsensitiveContains("expired") {
+                    return "Claude is signed out — run `claude` in a terminal to sign in again."
+                }
+                return "Claude CLI: \(m)"
             }
         }
     }
@@ -140,9 +148,18 @@ public struct ClaudeTitler: Titler {
                 if proc.terminationStatus == 0 && !text.isEmpty {
                     cont.resume(returning: text)
                 } else {
+                    // The reason can be on EITHER stream. Reading only stderr
+                    // discarded the one message that explains the failure: the
+                    // CLI reports "Failed to authenticate: OAuth session
+                    // expired" on stdout with exit 1, so every expired session
+                    // surfaced as the useless `.empty` and the app looked
+                    // broken rather than logged out.
                     let err = String(data: errBox.data, encoding: .utf8)?
                         .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                    cont.resume(throwing: !err.isEmpty ? CLIError.failed(String(err.prefix(200))) : CLIError.empty)
+                    let reason = err.isEmpty ? text : err
+                    cont.resume(throwing: reason.isEmpty
+                                ? CLIError.empty
+                                : CLIError.failed(String(reason.prefix(200))))
                 }
             }
         }
