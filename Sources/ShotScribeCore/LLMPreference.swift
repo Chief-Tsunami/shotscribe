@@ -2,16 +2,15 @@ import Foundation
 
 /// Which model this machine is set up to use.
 ///
-/// **Deliberately a second, independent implementation of the same file.**
-/// Toolbelt writes `~/.config/llm/provider.json` and ShotScribe reads it, and
-/// neither imports anything from the other — that is the whole point. A shared
-/// type would mean a package dependency, and a sidecar that depends on the belt
-/// has learned the belt exists.
+/// **Deliberately a second, independent implementation of a shared file.**
+/// `~/.config/llm/provider.json` is written by whatever on this machine offers
+/// the choice, and read by whatever needs it. ShotScribe is only a reader and
+/// imports nothing from the writer — that is the whole point. A shared type
+/// would mean a package dependency on whichever app happens to host the picker.
 ///
-/// The path is named after the *subject*, not after either app, so anything
-/// else on this machine can join in without asking permission. The duplication
-/// here is roughly forty lines and it buys zero coupling; that is a good trade,
-/// and it is the same trade the belt made on its side.
+/// The path is named after the *subject* rather than after any one app, so
+/// anything else here can join in without asking permission. The duplication is
+/// roughly forty lines and it buys zero coupling; a good trade.
 public struct LLMPreference: Sendable, Equatable {
 
     public enum Provider: String, Sendable {
