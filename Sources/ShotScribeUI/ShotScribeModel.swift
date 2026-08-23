@@ -40,6 +40,15 @@ public final class ShotScribeModel: ObservableObject {
 
     /// Title via the local `claude` CLI (sharper labels) vs the offline
     /// keyword titler. Only meaningful when `claudeAvailable`.
+    /// What `~/.config/llm/provider.json` says, if anything. Read at launch for
+    /// display; the titler re-reads at the moment of use.
+    @Published public private(set) var llmPreference = LLMPreference.load()
+
+    /// Non-nil when the machine's choice is one ShotScribe cannot honour.
+    public var llmMismatchNote: String? { llmPreference.mismatchNote }
+
+    public func refreshLLMPreference() { llmPreference = LLMPreference.load() }
+
     @Published public var useClaude: Bool {
         didSet { Self.defaults.set(useClaude, forKey: Self.useClaudeKey) }
     }
@@ -285,7 +294,11 @@ public final class ShotScribeModel: ObservableObject {
     // MARK: - Renaming
 
     private var titler: Titler {
-        (useClaude && claudeAvailable) ? ClaudeTitler() : KeywordTitler()
+        // The machine's provider choice gates this, not just ShotScribe's own
+        // toggle. Read fresh each time rather than cached at launch: the belt
+        // may rewrite the file while ShotScribe is mounted and running.
+        (useClaude && claudeAvailable && LLMPreference.load().provider.usableHere)
+            ? ClaudeTitler() : KeywordTitler()
     }
 
     public func rename(_ url: URL) async {

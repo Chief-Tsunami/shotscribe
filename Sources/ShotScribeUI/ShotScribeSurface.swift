@@ -454,6 +454,13 @@ public struct ShotScribeView: View {
                          destination: URL(string: "https://claude.com/claude-code")!)
                         .font(.caption2)
                 }
+                // Say when the machine's setting overrides this toggle, rather
+                // than leaving it on and quietly using the offline titler.
+                if let note = model.llmMismatchNote {
+                    Text(note).font(.caption2)
+                        .foregroundStyle(.orange)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .toggleStyle(.switch)
