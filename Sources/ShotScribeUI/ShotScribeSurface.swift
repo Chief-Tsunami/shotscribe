@@ -94,20 +94,11 @@ public struct ShotScribeView: View {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 if model.otherInstanceRunning { standDownBanner }
-                // Side by side when there is room, stacked when there is not.
-                // Each column keeps a readable measure — the width freed up here
-                // belongs to the shots, not to a settings row stretched across a
-                // 1500pt window.
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 16) {
-                        controlsColumn.frame(width: 560)
-                        searchBlock.frame(width: 560)
-                    }
-                    VStack(alignment: .leading, spacing: 18) {
-                        controlsColumn
-                        searchBlock
-                    }
-                }
+                // One column, in the order you read it: where shots land, what
+                // ShotScribe does to them, then how to find one.
+                folderRow
+                actionsBlock
+                searchField
                 errorLine
                 shotsBlock
                 if model.visibleShots.isEmpty && model.events.isEmpty {
@@ -129,71 +120,45 @@ public struct ShotScribeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private var controlsColumn: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 10) {
-                    folderRow
-                    Divider()
-                    watchToggle
-                    claudeToggle
-                }
-                .padding(4)
-            }
-            HStack {
-                renameAction
-                Spacer()
-                Button("Open folder") { NSWorkspace.shared.open(model.folder) }
-            }
-        }
-        .frame(maxWidth: 620, alignment: .leading)
-    }
-
-    /// Finding a screenshot by what it SAID.
-    ///
-    /// ShotScribe already reads every capture to name it; the index keeps that
-    /// text instead of discarding it. A three-word title is a thin hook a month
-    /// later — you remember the error message, not the label.
-    @ViewBuilder
-    private var searchBlock: some View {
+    /// What ShotScribe does to what lands in the folder.
+    private var actionsBlock: some View {
         GroupBox {
-            VStack(alignment: .leading, spacing: 9) {
-                HStack(spacing: 8) {
-                    Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                    TextField("Search what your screenshots say…", text: $model.query)
-                        .textFieldStyle(.plain)
-                        .onSubmit { model.runSearch() }
-                        .onChange(of: model.query) { _ in model.runSearch() }
-                    if !model.query.isEmpty {
-                        Button { model.query = ""; model.runSearch() } label: {
-                            Image(systemName: "xmark.circle.fill")
-                        }
-                        .buttonStyle(.plain).foregroundStyle(.tertiary)
-                    }
-                }
-
-                if model.indexing {
-                    HStack(spacing: 8) {
-                        ProgressView().controlSize(.small)
-                        Text(model.indexProgress.map { "Reading \($0.0) of \($0.1)…" } ?? "Reading…")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                } else if model.query.isEmpty {
-                    HStack(spacing: 8) {
-                        Text("\(model.indexedCount) screenshots indexed")
-                            .font(.caption).foregroundStyle(.secondary)
-                        Spacer()
-                        Button("Re-read folder") { model.rebuildIndex() }
-                            .controlSize(.small)
-                    }
-                } else if model.visibleShots.isEmpty {
-                    Text("Nothing matched. Captures taken before the index was built need one pass — use Re-read folder.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 10) {
+                watchToggle
+                claudeToggle
+                Divider()
+                HStack {
+                    renameAction
+                    Spacer()
+                    Button("Open folder") { NSWorkspace.shared.open(model.folder) }
+                        .controlSize(.small)
                 }
             }
             .padding(4)
         }
+    }
+
+    /// One field. It searches what the screenshots SAY, because ShotScribe
+    /// already read every one of them to name it and the text is kept.
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Find a screenshot", text: $model.query)
+                .textFieldStyle(.plain)
+                .font(.body)
+                .onSubmit { model.runSearch() }
+                .onChange(of: model.query) { _ in model.runSearch() }
+            if !model.query.isEmpty {
+                Button { model.query = ""; model.runSearch() } label: {
+                    Image(systemName: "xmark.circle.fill")
+                }
+                .buttonStyle(.plain).foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 11).padding(.vertical, 9)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.quinary))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .strokeBorder(.separator, lineWidth: 1))
     }
 
     /// The shots themselves, in whichever view is chosen.
@@ -205,12 +170,46 @@ public struct ShotScribeView: View {
     private var shotsBlock: some View {
         if !model.visibleShots.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Text(model.query.isEmpty
-                         ? "All screenshots"
+                         ? "\(model.visibleShots.count) screenshots"
                          : "\(model.visibleShots.count) match\(model.visibleShots.count == 1 ? "" : "es")")
                         .font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+
+                    if model.selecting {
+                        Text("· \(model.selected.count) selected")
+                            .font(.caption).foregroundStyle(.tertiary)
+                        Button("All") { model.selectAllVisible() }.controlSize(.small)
+                        Button(role: .destructive) {
+                            model.trashSelected()
+                        } label: {
+                            Label("Move to Trash", systemImage: "trash")
+                        }
+                        .controlSize(.small)
+                        .disabled(model.selected.isEmpty)
+                    }
+
                     Spacer()
+
+                    Button {
+                        model.selecting.toggle()
+                    } label: {
+                        Image(systemName: model.selecting
+                              ? "checkmark.circle.fill" : "checkmark.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(model.selecting ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .help(model.selecting ? "Done selecting" : "Select screenshots")
+
+                    Picker("", selection: $model.sort) {
+                        ForEach(ShotScribeModel.ShotSort.allCases) { s in
+                            Text(s.label).tag(s)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 132)
+                    .help("Sort")
+
                     Picker("", selection: $model.shotView) {
                         ForEach(ShotScribeModel.ShotView.allCases) { v in
                             Image(systemName: v.symbol).tag(v).help(v.label)
@@ -231,8 +230,16 @@ public struct ShotScribeView: View {
     private var shotsList: some View {
         LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(model.visibleShots.prefix(300)) { shot in
-                Button { model.reveal(shot) } label: {
+                Button {
+                    model.selecting ? model.toggleSelected(shot) : model.reveal(shot)
+                } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        if model.selecting {
+                            Image(systemName: model.selected.contains(shot.path)
+                                  ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(model.selected.contains(shot.path)
+                                                 ? AnyShapeStyle(.tint) : AnyShapeStyle(.tertiary))
+                        }
                         Text(shot.name).font(.callout.weight(.medium))
                             .lineLimit(1).truncationMode(.middle)
                             .frame(minWidth: 180, alignment: .leading)
@@ -261,9 +268,22 @@ public struct ShotScribeView: View {
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190, maximum: 280), spacing: 12)],
                   alignment: .leading, spacing: 12) {
             ForEach(model.visibleShots.prefix(300)) { shot in
-                Button { model.reveal(shot) } label: {
+                Button {
+                    model.selecting ? model.toggleSelected(shot) : model.reveal(shot)
+                } label: {
                     VStack(alignment: .leading, spacing: 0) {
                         Thumbnail(path: shot.path)
+                            .overlay(alignment: .topLeading) {
+                                if model.selecting {
+                                    Image(systemName: model.selected.contains(shot.path)
+                                          ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 17))
+                                        .symbolRenderingMode(.palette)
+                                        .foregroundStyle(.white, model.selected.contains(shot.path)
+                                                         ? AnyShapeStyle(.tint) : AnyShapeStyle(.black.opacity(0.35)))
+                                        .padding(7)
+                                }
+                            }
                         VStack(alignment: .leading, spacing: 1) {
                             Text(shot.name).font(.caption.weight(.medium))
                                 .lineLimit(1).truncationMode(.middle)
@@ -276,7 +296,9 @@ public struct ShotScribeView: View {
                     .background(.quinary)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(.separator, lineWidth: 1))
+                        .strokeBorder(model.selected.contains(shot.path)
+                                      ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator),
+                                      lineWidth: model.selected.contains(shot.path) ? 2 : 1))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -334,9 +356,15 @@ public struct ShotScribeView: View {
                 Image(systemName: folderTargeted ? "folder.fill.badge.plus" : "folder")
                     .foregroundStyle(folderTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(model.folder.lastPathComponent)
-                        .font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
-                    Text(folderTargeted ? "Drop to watch this folder" : model.folder.path)
+                    HStack(spacing: 6) {
+                        Text("Dropzone").font(.caption2.weight(.bold))
+                            .foregroundStyle(.tertiary).textCase(.uppercase)
+                        Text(model.folder.lastPathComponent)
+                            .font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
+                    }
+                    Text(folderTargeted
+                         ? "Drop to watch this folder"
+                         : "Screenshots landing here get named for what they show")
                         .font(.caption2).foregroundStyle(.tertiary)
                         .lineLimit(1).truncationMode(.middle)
                 }
@@ -348,7 +376,38 @@ public struct ShotScribeView: View {
                     .buttonStyle(.plain).controlSize(.small)
                     .help("Back to the system screenshot folder")
                 }
-                Button("Browse…") { model.chooseFolder() }.controlSize(.small)
+                // A menu rather than a button: the answer is almost always one
+                // of four known folders, and a file picker for that is a dialog
+                // standing between you and a one-click choice.
+                Menu {
+                    Section("Current") {
+                        Button {
+                        } label: {
+                            Label(model.folder.lastPathComponent, systemImage: "checkmark")
+                        }
+                        .disabled(true)
+                    }
+                    Section("Common") {
+                        ForEach(ShotScribeModel.quickFolders) { c in
+                            Button {
+                                model.use(c)
+                            } label: {
+                                Text(c.label)
+                            }
+                            .disabled(model.folder.path == c.url.path)
+                        }
+                    }
+                    Divider()
+                    Button("Choose another folder…") { model.chooseFolder() }
+                    if model.usesCustomFolder {
+                        Button("Back to system screenshot folder") { model.useSystemFolder() }
+                    }
+                } label: {
+                    Text("Change")
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .controlSize(.small)
             }
             .padding(9)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -366,21 +425,6 @@ public struct ShotScribeView: View {
                 return true
             }
 
-            HStack(spacing: 6) {
-                ForEach(ShotScribeModel.quickFolders) { c in
-                    Button {
-                        model.use(c)
-                    } label: {
-                        Text(c.label).font(.caption)
-                    }
-                    .controlSize(.small)
-                    .disabled(model.folder.path == c.url.path)
-                    .help(c.creates
-                          ? "\(c.url.path) — created if it does not exist"
-                          : c.url.path)
-                }
-                Spacer()
-            }
         }
     }
 

@@ -100,11 +100,15 @@ public final class ShotScribeModel: ObservableObject {
         public var creates: Bool
     }
 
+    /// Where people actually point screenshots. macOS defaults to Desktop, and
+    /// Documents and Downloads are the two places it gets moved to; the last is
+    /// ShotScribe's own, created on demand so "somewhere tidy" needs no decision.
     public static var quickFolders: [FolderChoice] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         return [
             .init(label: "Desktop", url: home.appendingPathComponent("Desktop"), creates: false),
             .init(label: "Documents", url: home.appendingPathComponent("Documents"), creates: false),
+            .init(label: "Downloads", url: home.appendingPathComponent("Downloads"), creates: false),
             .init(label: "Screenshots", url: home.appendingPathComponent("Pictures/Screenshots"), creates: true),
         ]
     }
@@ -176,6 +180,9 @@ public final class ShotScribeModel: ObservableObject {
         }
         if let raw = ud.string(forKey: "shotView"), let v = ShotView(rawValue: raw) {
             shotView = v
+        }
+        if let raw = ud.string(forKey: "shotSort"), let v = ShotSort(rawValue: raw) {
+            sort = v
         }
         loadIndex()
         refreshOtherInstance()
@@ -360,6 +367,57 @@ public final class ShotScribeModel: ObservableObject {
         didSet { Self.defaults.set(shotView.rawValue, forKey: "shotView") }
     }
 
+    public enum ShotSort: String, CaseIterable, Identifiable, Sendable {
+        case newest, oldest, nameAsc, nameDesc
+        public var id: String { rawValue }
+        public var label: String {
+            switch self {
+            case .newest:   return "Newest first"
+            case .oldest:   return "Oldest first"
+            case .nameAsc:  return "Name A–Z"
+            case .nameDesc: return "Name Z–A"
+            }
+        }
+    }
+
+    @Published var sort: ShotSort = .newest {
+        didSet { Self.defaults.set(sort.rawValue, forKey: "shotSort"); loadIndex() }
+    }
+
+    // MARK: Selection
+
+    /// Selection is modal on purpose. Checkboxes on every tile all the time turn
+    /// a browser into a file manager; you are usually looking, not tidying.
+    @Published var selecting = false { didSet { if !selecting { selected.removeAll() } } }
+    @Published var selected: Set<String> = []
+
+    func toggleSelected(_ shot: IndexedShot) {
+        if selected.contains(shot.path) { selected.remove(shot.path) }
+        else { selected.insert(shot.path) }
+    }
+    func selectAllVisible() { selected = Set(visibleShots.map(\.path)) }
+
+    /// Move the selected shots to the Trash — recoverable by design. A cleanup
+    /// tool that deletes outright is one you stop trusting the first time it is
+    /// wrong, and it would be wrong about a screenshot you had not looked at yet.
+    func trashSelected() {
+        let urls = selected.map { URL(fileURLWithPath: $0) }
+        guard !urls.isEmpty else { return }
+        NSWorkspace.shared.recycle(urls) { [weak self] _, error in
+            Task { @MainActor in
+                guard let self else { return }
+                if let error { self.lastError = "Couldn't move to Trash: \(error.localizedDescription)" }
+                // Drop them from the index either way: anything that did move is
+                // gone, and a reindex will restore anything that did not.
+                for u in urls { ShotIndex.forget(u.path) }
+                self.selected.removeAll()
+                self.selecting = false
+                self.loadIndex()
+                self.runSearch()
+            }
+        }
+    }
+
     @Published var query: String = ""
     @Published private(set) var hits: [SearchHit] = []
     @Published private(set) var indexing = false
@@ -376,8 +434,16 @@ public final class ShotScribeModel: ObservableObject {
     @Published private(set) var indexCache: [IndexedShot] = []
 
     func loadIndex() {
-        let shots = ShotIndex.load().shots.values.sorted { $0.captured > $1.captured }
-        indexCache = shots
+        indexCache = Self.sorted(Array(ShotIndex.load().shots.values), by: sort)
+    }
+
+    static func sorted(_ shots: [IndexedShot], by sort: ShotSort) -> [IndexedShot] {
+        switch sort {
+        case .newest:   return shots.sorted { $0.captured > $1.captured }
+        case .oldest:   return shots.sorted { $0.captured < $1.captured }
+        case .nameAsc:  return shots.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+        case .nameDesc: return shots.sorted { $0.name.localizedStandardCompare($1.name) == .orderedDescending }
+        }
     }
 
     /// What the views show: search hits when searching, the whole corpus
@@ -386,7 +452,9 @@ public final class ShotScribeModel: ObservableObject {
     var visibleShots: [IndexedShot] {
         query.trimmingCharacters(in: .whitespaces).isEmpty
             ? indexCache
-            : hits.map(\.shot)
+            // Search results are ranked by relevance; re-sorting them by date
+            // would throw away the ranking that made them results.
+            : (sort == .newest ? hits.map(\.shot) : Self.sorted(hits.map(\.shot), by: sort))
     }
 
     func snippet(for shot: IndexedShot) -> String? {
