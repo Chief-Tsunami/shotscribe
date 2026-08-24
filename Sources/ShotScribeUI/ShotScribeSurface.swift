@@ -329,14 +329,17 @@ public struct ShotScribeView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Image(systemName: "text.viewfinder")
-                .font(chrome == .hosted ? .largeTitle : .title3)
-                .foregroundStyle(model.watching && !model.otherInstanceRunning
-                                 ? Color.accentColor : .secondary)
+            // Standalone only. Hosted, the rail tab is already this tool's
+            // head; in its own window there is no rail, so the header is the
+            // only place the app says what it is.
+            if chrome != .hosted {
+                ToolIcon(icon: ShotScribeSurface.appIcon, fallback: "text.viewfinder",
+                         tint: ShotPalette.accent, size: 30)
+            }
             VStack(alignment: .leading, spacing: 1) {
-                Text("ShotScribe").font(chrome == .hosted ? .title2.weight(.semibold) : .headline)
                 Text(model.folder.path)
-                    .font(.caption2).foregroundStyle(.secondary)
+                    .font(chrome == .hosted ? .callout : .caption2)
+                    .foregroundStyle(.secondary)
                     .lineLimit(1).truncationMode(.middle)
             }
             Spacer()
