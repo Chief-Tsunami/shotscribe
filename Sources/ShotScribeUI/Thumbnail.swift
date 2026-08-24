@@ -51,7 +51,7 @@ struct Thumbnail: View {
             } else {
                 Rectangle().fill(.quaternary)
                     .overlay(Image(systemName: "photo")
-                        .foregroundStyle(.tertiary).font(.system(size: 18)))
+                        .foregroundStyle(.secondary).font(.system(size: 18)))
             }
         }
         .frame(height: height)

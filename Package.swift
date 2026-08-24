@@ -33,7 +33,10 @@ let package = Package(
         ),
         .target(
             name: "ShotScribeUI",
-            dependencies: ["ShotScribeCore"]
+            dependencies: ["ShotScribeCore"],
+            // The app icon, so the same artwork appears in the Dock standalone
+            // and in a host's rail when mounted.
+            resources: [.process("Resources")]
         ),
         .executableTarget(
             name: "shotscribe-menubar",

@@ -152,7 +152,7 @@ public struct ShotScribeView: View {
                 Button { model.query = ""; model.runSearch() } label: {
                     Image(systemName: "xmark.circle.fill")
                 }
-                .buttonStyle(.plain).foregroundStyle(.tertiary)
+                .buttonStyle(.plain).foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 11).padding(.vertical, 9)
@@ -178,7 +178,7 @@ public struct ShotScribeView: View {
 
                     if model.selecting {
                         Text("· \(model.selected.count) selected")
-                            .font(.caption).foregroundStyle(.tertiary)
+                            .font(.caption).foregroundStyle(.secondary)
                         Button("All") { model.selectAllVisible() }.controlSize(.small)
                         Button(role: .destructive) {
                             model.trashSelected()
@@ -249,7 +249,7 @@ public struct ShotScribeView: View {
                         }
                         Spacer(minLength: 8)
                         Text(shot.captured, format: .dateTime.year().month().day())
-                            .font(.caption).foregroundStyle(.tertiary).monospacedDigit()
+                            .font(.caption).foregroundStyle(.secondary).monospacedDigit()
                     }
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
@@ -288,7 +288,7 @@ public struct ShotScribeView: View {
                             Text(shot.name).font(.caption.weight(.medium))
                                 .lineLimit(1).truncationMode(.middle)
                             Text(shot.captured, format: .dateTime.year().month().day())
-                                .font(.caption2).foregroundStyle(.tertiary)
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
                         .padding(.horizontal, 8).padding(.vertical, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -358,14 +358,14 @@ public struct ShotScribeView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack(spacing: 6) {
                         Text("Dropzone").font(.caption2.weight(.bold))
-                            .foregroundStyle(.tertiary).textCase(.uppercase)
+                            .foregroundStyle(.secondary).textCase(.uppercase)
                         Text(model.folder.lastPathComponent)
                             .font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
                     }
                     Text(folderTargeted
                          ? "Drop to watch this folder"
                          : "Screenshots landing here get named for what they show")
-                        .font(.caption2).foregroundStyle(.tertiary)
+                        .font(.caption2).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                 }
                 Spacer(minLength: 8)
@@ -491,7 +491,7 @@ public struct ShotScribeView: View {
             ForEach(model.events.prefix(limit)) { e in
                 VStack(alignment: .leading, spacing: 0) {
                     Text(e.to).font(.caption).lineLimit(1).truncationMode(.middle)
-                    Text(e.from).font(.caption2).foregroundStyle(.tertiary)
+                    Text(e.from).font(.caption2).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                 }
             }
