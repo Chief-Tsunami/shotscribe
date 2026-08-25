@@ -100,3 +100,125 @@ final class ClaudeTitlerErrorTests: XCTestCase {
         XCTAssertEqual(e.errorDescription, "Claude CLI: model overloaded")
     }
 }
+
+/// The sweep that finds screenshots this app did not rename.
+///
+/// `reindex` was complete, correct, and **had no caller anywhere in the app**
+/// for weeks — so the browser only ever held captures ShotScribe itself had
+/// named, and pointing it at a folder of existing screenshots produced an empty
+/// list with nothing to say why. These assert the behaviour the callers now
+/// depend on.
+final class ReindexSweepTests: XCTestCase {
+
+    /// **Never the real index.** `ShotIndex` writes to `~/.shotscribe/index.json`
+    /// by default — the operator's actual searchable history — so without this
+    /// every run of these tests edits live data. The first run of them did
+    /// exactly that, leaving 42 temp-folder entries behind.
+    private var storeDir: URL!
+
+    override func setUpWithError() throws {
+        storeDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("shotscribe-store-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: storeDir, withIntermediateDirectories: true)
+        ShotIndex.storeOverride = storeDir.appendingPathComponent("index.json")
+    }
+
+    override func tearDownWithError() throws {
+        ShotIndex.storeOverride = nil
+        try? FileManager.default.removeItem(at: storeDir)
+    }
+
+    private func makeFolder() throws -> URL {
+        let dir = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("shotscribe-sweep-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // Canonical, the only way that actually works: a temp dir is handed out
+        // as `/var/…` and read back as `/private/var/…`, and none of the URL
+        // resolution APIs bridge the two — only asking the filesystem does.
+        let canon = (try? dir.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath
+        return canon.map { URL(fileURLWithPath: $0) } ?? dir
+    }
+
+    /// A one-pixel PNG: real enough to be an image file, cheap enough for a test.
+    private func writeImage(_ url: URL) throws {
+        let png: [UInt8] = [
+            0x89,0x50,0x4E,0x47,0x0D,0x0A,0x1A,0x0A,0x00,0x00,0x00,0x0D,0x49,0x48,0x44,0x52,
+            0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x01,0x08,0x06,0x00,0x00,0x00,0x1F,0x15,0xC4,
+            0x89,0x00,0x00,0x00,0x0A,0x49,0x44,0x41,0x54,0x78,0x9C,0x63,0x00,0x01,0x00,0x00,
+            0x05,0x00,0x01,0x0D,0x0A,0x2D,0xB4,0x00,0x00,0x00,0x00,0x49,0x45,0x4E,0x44,0xAE,
+            0x42,0x60,0x82]
+        try Data(png).write(to: url)
+    }
+
+    /// The whole point: images already sitting in the folder get indexed.
+    func testExistingScreenshotsAreIndexed() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for n in ["one.png", "two.png", "three.png"] {
+            try writeImage(dir.appendingPathComponent(n))
+        }
+
+        XCTAssertEqual(ShotIndex.imageFiles(in: dir).count, 3, "files must be on disk first")
+        let result = ShotIndex.reindex(folder: dir)
+        XCTAssertEqual(result.indexed, 3,
+                       "pre-existing captures must be picked up (skipped=\(result.skipped))")
+        XCTAssertEqual(result.skipped, 0)
+
+        let store = ShotIndex.load()
+        let indexed = store.shots.keys.filter { $0.hasPrefix(dir.path) }
+        XCTAssertEqual(indexed.count, 3)
+    }
+
+    /// What makes calling this on every launch affordable: the second pass reads
+    /// nothing. If this regresses, launch starts doing OCR over the whole folder
+    /// every time.
+    func testSecondSweepSkipsUnchangedFiles() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try writeImage(dir.appendingPathComponent("one.png"))
+
+        XCTAssertEqual(ShotIndex.reindex(folder: dir).indexed, 1)
+        let second = ShotIndex.reindex(folder: dir)
+        XCTAssertEqual(second.indexed, 0, "unchanged files must not be re-read")
+        XCTAssertEqual(second.skipped, 1)
+    }
+
+    /// `force` is what the manual re-scan button passes.
+    func testForceReReadsEvenUnchangedFiles() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try writeImage(dir.appendingPathComponent("one.png"))
+
+        _ = ShotIndex.reindex(folder: dir)
+        XCTAssertEqual(ShotIndex.reindex(folder: dir, force: true).indexed, 1)
+    }
+
+    /// A deleted capture must not linger in search results.
+    func testDeletedFilesArePruned() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let gone = dir.appendingPathComponent("gone.png")
+        try writeImage(gone)
+        try writeImage(dir.appendingPathComponent("stays.png"))
+        _ = ShotIndex.reindex(folder: dir)
+
+        try FileManager.default.removeItem(at: gone)
+        let after = ShotIndex.reindex(folder: dir)
+        XCTAssertEqual(after.pruned, 1)
+        XCTAssertFalse(ShotIndex.load().shots.keys.contains(gone.path))
+    }
+
+    /// Progress drives a visible readout, so it has to be reported per file.
+    func testProgressIsReportedForEveryFile() throws {
+        let dir = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        for n in ["a.png", "b.png"] { try writeImage(dir.appendingPathComponent(n)) }
+
+        var seen: [(Int, Int)] = []
+        _ = ShotIndex.reindex(folder: dir) { i, n in seen.append((i, n)) }
+        XCTAssertEqual(seen.count, 2)
+        XCTAssertEqual(seen.last?.0, 2)
+        XCTAssertEqual(seen.last?.1, 2)
+    }
+}
+

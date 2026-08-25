@@ -54,8 +54,17 @@ public enum ShotIndex {
         public var shots: [String: IndexedShot] = [:]
     }
 
+    /// Overrides `indexURL`. **Exists so tests do not write to the real index.**
+    ///
+    /// There was no seam here, so exercising `reindex` meant mutating
+    /// `~/.shotscribe/index.json` — the operator's actual searchable history.
+    /// A first run of the new sweep tests put 42 temp-folder entries into it
+    /// (2026-08-24). Data a test can reach is data a test will eventually
+    /// corrupt; the fix is a seam, not care.
+    public static var storeOverride: URL?
+
     public static var indexURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        storeOverride ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".shotscribe/index.json")
     }
 
@@ -137,8 +146,28 @@ public enum ShotIndex {
         }
 
         // A renamed or deleted file leaves a stale entry pointing nowhere.
+        //
+        // **Compare resolved paths.** `contentsOfDirectory` hands back
+        // symlink-resolved URLs, so a key is stored as `/private/var/…` while
+        // the caller's `folder.path` may still read `/var/…`. The prefix test
+        // then matches nothing and the prune silently does nothing — stale
+        // entries accumulate for deleted screenshots and search keeps returning
+        // them. Found 2026-08-24 by a test whose temp folder took exactly that
+        // form; `/Users/…` paths hid it because they resolve to themselves.
+        // **Canonicalise the folder through the filesystem.**
+        //
+        // Keys are stored from `imageFiles`, and `contentsOfDirectory` hands back
+        // canonical URLs — `/private/var/…`. The caller's `folder` may still say
+        // `/var/…`, so the prefix test matched nothing and the prune silently did
+        // nothing: deleted screenshots stayed searchable forever. Measured
+        // 2026-08-24, none of `resolvingSymlinksInPath()`, `standardizedFileURL`
+        // or `NSString.resolvingSymlinksInPath` performs that mapping — only
+        // asking the filesystem does. `/Users/…` folders hid the bug because they
+        // are already canonical.
+        let root = (try? folder.resourceValues(forKeys: [.canonicalPathKey]))?
+            .canonicalPath ?? folder.path
         let live = Set(files.map(\.path))
-        let dead = store.shots.keys.filter { !live.contains($0) && $0.hasPrefix(folder.path) }
+        let dead = store.shots.keys.filter { !live.contains($0) && $0.hasPrefix(root) }
         dead.forEach { store.shots.removeValue(forKey: $0) }
 
         save(store)

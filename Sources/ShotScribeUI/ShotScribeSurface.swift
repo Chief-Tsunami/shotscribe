@@ -92,7 +92,15 @@ public struct ShotScribeView: View {
     private var pane: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header
+                // The header reads as a BAND, not as a stray line: it runs the
+                // whole width the pane is given and closes with a rule at the
+                // far edge. Everything below it already stretched; the top did
+                // not, so the widest part of the surface was also the emptiest.
+                VStack(alignment: .leading, spacing: 9) {
+                    header
+                    Divider()
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 if model.otherInstanceRunning { standDownBanner }
                 // One column, in the order you read it: where shots land, what
                 // ShotScribe does to them, then how to find one.
@@ -327,6 +335,16 @@ public struct ShotScribeView: View {
 
     // MARK: Shared pieces
 
+    /// **What ShotScribe is doing — not where the folder is.**
+    ///
+    /// The header used to lead with the watch folder's full path, so the first
+    /// thing anyone read on this surface was `/Users/…/Pictures/…`: the answer
+    /// to a question you ask once, parked in the spot you look at every time.
+    /// The path did not go away — it moved to the drop zone's hover, where it
+    /// is attached to the thing it actually describes.
+    ///
+    /// What the top of a watcher owes you instead is whether it is *on*. Both
+    /// chromes say the same sentence; only the icon differs.
     private var header: some View {
         HStack(spacing: 8) {
             // Standalone only. Hosted, the rail tab is already this tool's
@@ -336,38 +354,86 @@ public struct ShotScribeView: View {
                 ToolIcon(icon: ShotScribeSurface.appIcon, fallback: "text.viewfinder",
                          tint: ShotPalette.accent, size: 30)
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(model.folder.path)
-                    .font(chrome == .hosted ? .callout : .caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1).truncationMode(.middle)
+            Image(systemName: watchState.symbol)
+                .font(.system(size: 9))
+                .foregroundStyle(watchState.tint)
+                .accessibilityHidden(true)
+            Text(watchState.title)
+                .font(chrome == .hosted ? .callout.weight(.medium) : .caption.weight(.medium))
+                .lineLimit(1).truncationMode(.tail)
+            Spacer(minLength: 8)
+            // The far end of the band is content, not margin. The spinner was
+            // already here saying nothing; now it says what it is waiting for,
+            // which is the only thing the right edge has to report.
+            if model.busy {
+                Text("Naming the newest capture…")
+                    .font(chrome == .hosted ? .caption : .caption2)
+                    .foregroundStyle(.secondary).lineLimit(1)
+                ProgressView().controlSize(.small)
             }
-            Spacer()
-            if model.busy { ProgressView().controlSize(.small) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// The three states worth a word at the top of a folder watcher.
+    private enum WatchState {
+        case watching, paused, standingDown
+
+        var symbol: String {
+            switch self {
+            case .watching:     return "circle.fill"
+            case .paused:       return "circle"
+            case .standingDown: return "pause.circle.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .watching:     return .green
+            case .paused:       return .secondary
+            case .standingDown: return ShotPalette.warning
+            }
+        }
+
+        /// Short enough to survive the 340pt popover beside a 30pt icon.
+        var title: String {
+            switch self {
+            case .watching:     return "Watching for new screenshots"
+            case .paused:       return "Paused — new captures keep their names"
+            case .standingDown: return "Standing down for ShotScribe.app"
+            }
         }
     }
 
-    /// The watch folder, as a drop target with one-click alternatives.
+    private var watchState: WatchState {
+        if model.otherInstanceRunning { return .standingDown }
+        return model.watching ? .watching : .paused
+    }
+
+    /// The watch folder, drawn as the **folder it is** and doubling as the drop
+    /// target.
     ///
     /// It was a label and a "Change…" button, which put a file picker between
     /// you and a folder already open in Finder. Dropping the folder says the
     /// same thing in one gesture, and the three named choices cover the places
     /// captures actually live without opening anything.
+    ///
+    /// **Where it is lives in the hover.** The row shows the folder the way
+    /// Finder shows it — its own icon, its own name — and says only what it is
+    /// for; the full path is one hover away, on the row it describes, and also
+    /// spelled out under "Current" in the Change menu. That is the whole reason
+    /// the header no longer opens with a path: the destination is a property of
+    /// this row, not a headline.
     private var folderRow: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Image(systemName: folderTargeted ? "folder.fill.badge.plus" : "folder")
-                    .foregroundStyle(folderTargeted ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                FolderIcon(url: model.folder, targeted: folderTargeted)
                 VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text("Dropzone").font(.caption2.weight(.bold))
-                            .foregroundStyle(.secondary).textCase(.uppercase)
-                        Text(model.folder.lastPathComponent)
-                            .font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
-                    }
+                    Text(model.folder.lastPathComponent)
+                        .font(.callout.weight(.medium)).lineLimit(1).truncationMode(.middle)
                     Text(folderTargeted
                          ? "Drop to watch this folder"
-                         : "Screenshots landing here get named for what they show")
+                         : "Drop area for your screenshots")
                         .font(.caption2).foregroundStyle(.secondary)
                         .lineLimit(1).truncationMode(.middle)
                 }
@@ -383,10 +449,13 @@ public struct ShotScribeView: View {
                 // of four known folders, and a file picker for that is a dialog
                 // standing between you and a one-click choice.
                 Menu {
+                    // Spelled out, tilde-abbreviated: the second place the
+                    // path is readable, for anyone who opens the menu instead
+                    // of resting on the row.
                     Section("Current") {
                         Button {
                         } label: {
-                            Label(model.folder.lastPathComponent, systemImage: "checkmark")
+                            Label(abbreviatedFolderPath, systemImage: "checkmark")
                         }
                         .disabled(true)
                     }
@@ -427,8 +496,24 @@ public struct ShotScribeView: View {
                 }
                 return true
             }
+            // The path, on demand. Rest anywhere on the row — including the
+            // icon and the name — and it tells you where you are going.
+            .help(destinationHelp)
 
         }
+    }
+
+    /// The whole answer to "where do my screenshots go?", which is the one job
+    /// the full path has. Said in the hover so it does not have to be said at
+    /// the top of the surface.
+    private var destinationHelp: String {
+        "New screenshots land in \(model.folder.path)"
+    }
+
+    /// `~/Pictures/Screenshots` rather than `/Users/you/Pictures/Screenshots` —
+    /// same information, and it fits in a menu.
+    private var abbreviatedFolderPath: String {
+        (model.folder.path as NSString).abbreviatingWithTildeInPath
     }
 
     private var watchToggle: some View {
@@ -499,5 +584,34 @@ public struct ShotScribeView: View {
                 }
             }
         }
+    }
+}
+
+/// The watch folder as **Finder draws it** — its real icon, custom ones
+/// included — so the drop zone reads as a folder you recognise rather than as a
+/// setting with a generic glyph beside it.
+///
+/// While a drag is over the row it swaps to the badge symbol: mid-drop the
+/// question is "will this land here", and a badge answers that better than an
+/// accurate picture of the destination does.
+private struct FolderIcon: View {
+    let url: URL
+    let targeted: Bool
+    var size: CGFloat = 22
+
+    var body: some View {
+        Group {
+            if targeted {
+                Image(systemName: "folder.fill.badge.plus")
+                    .font(.system(size: size * 0.78))
+                    .foregroundStyle(.tint)
+            } else {
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path))
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }

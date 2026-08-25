@@ -28,7 +28,9 @@ final class LLMPreferenceTests: XCTestCase {
 
     /// The gap this closes: the belt had a picker and nothing read it.
     func testItReadsWhatTheBeltWrites() throws {
-        // The exact shape ToolbeltKit.LLMSettings encodes.
+        // The exact shape the shared settings file uses. Named after its
+        // subject, not after any host — this app reads a machine-level
+        // preference and has no idea who else writes it.
         try write(#"{"provider":"local","endpoint":"http://127.0.0.1:11434","model":"llama3"}"#)
         let pref = LLMPreference.load()
         XCTAssertEqual(pref.provider, .local)

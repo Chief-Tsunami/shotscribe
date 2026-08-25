@@ -158,6 +158,12 @@ public final class ShotScribeModel: ObservableObject {
         // it, or search silently answers from the old one.
         loadIndex()
         hits = []
+        // ...and the new folder's screenshots are almost certainly not in the
+        // store at all. `loadIndex()` only READS what has been indexed; without
+        // this, pointing at a folder full of existing captures produced an empty
+        // browser and a search that found nothing, with no sign anything was
+        // wrong. `rebuildIndex` had no caller anywhere in the app.
+        rebuildIndex()
     }
 
     // MARK: - Launch at login
@@ -197,6 +203,13 @@ public final class ShotScribeModel: ObservableObject {
         refreshOtherInstance()
         observeOtherInstances()
         if watching { startWatcher() }
+        // Sweep on launch. Captures land while this app is closed — dropped in
+        // by hand, synced, or taken with the watcher off — and the watcher only
+        // ever sees what arrives while it is running. Cheap after the first
+        // pass: `reindex` skips any file whose size is unchanged, so the steady
+        // state is a directory listing plus a stat per file, and only genuinely
+        // new images are read for text.
+        rebuildIndex()
     }
 
     // MARK: - Not stepping on another copy of ourselves
@@ -486,6 +499,15 @@ public final class ShotScribeModel: ObservableObject {
     /// Read every screenshot in the watched folder into the index. Runs off the
     /// main thread — accurate OCR over a few hundred files is seconds, not
     /// milliseconds.
+    /// Sweep the watch folder into the search index.
+    ///
+    /// **This existed for weeks with no caller.** The browser therefore only
+    /// ever contained screenshots this app had itself renamed — every
+    /// pre-existing capture in a chosen folder was invisible to search, and
+    /// nothing said so. Called now on launch, on a folder change, and by hand.
+    ///
+    /// `force` re-reads text for files already indexed; without it the sweep
+    /// skips anything whose size has not changed.
     func rebuildIndex(force: Bool = false) {
         guard !indexing else { return }
         indexing = true
