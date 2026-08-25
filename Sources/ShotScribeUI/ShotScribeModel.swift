@@ -308,8 +308,8 @@ public final class ShotScribeModel: ObservableObject {
 
     private var titler: Titler {
         // The machine's provider choice gates this, not just ShotScribe's own
-        // toggle. Read fresh each time rather than cached at launch: the belt
-        // may rewrite the file while ShotScribe is mounted and running.
+        // toggle. Read fresh each time rather than cached at launch: whatever
+        // offers the picker may rewrite the file while ShotScribe is running.
         (useClaude && claudeAvailable && LLMPreference.load().provider.usableHere)
             ? ClaudeTitler() : KeywordTitler()
     }

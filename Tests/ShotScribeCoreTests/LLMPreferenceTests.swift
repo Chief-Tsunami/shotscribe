@@ -3,31 +3,43 @@ import XCTest
 
 final class LLMPreferenceTests: XCTestCase {
 
-    private var backup: Data?
+    /// Every case here writes through `LLMPreference.fileOverride`, never to
+    /// `~/.config/llm/provider.json`. An earlier version of this file wrote
+    /// junk straight into that path and deleted it between cases, restoring a
+    /// backup on the way out — which holds only if the run reaches teardown.
+    /// It is a machine-level setting other apps here read too, so the fix is a
+    /// seam rather than a more careful backup.
+    private var sandbox: URL!
 
     override func setUpWithError() throws {
-        backup = try? Data(contentsOf: LLMPreference.fileURL)
+        sandbox = URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+            .appendingPathComponent("llm-pref-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: sandbox, withIntermediateDirectories: true)
+        LLMPreference.fileOverride = sandbox.appendingPathComponent("provider.json")
     }
+
     override func tearDownWithError() throws {
-        if let backup {
-            try FileManager.default.createDirectory(
-                at: LLMPreference.fileURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true)
-            try backup.write(to: LLMPreference.fileURL)
-        } else {
-            try? FileManager.default.removeItem(at: LLMPreference.fileURL)
-        }
+        LLMPreference.fileOverride = nil
+        try? FileManager.default.removeItem(at: sandbox)
     }
 
     private func write(_ json: String) throws {
-        try FileManager.default.createDirectory(
-            at: LLMPreference.fileURL.deletingLastPathComponent(),
-            withIntermediateDirectories: true)
         try Data(json.utf8).write(to: LLMPreference.fileURL)
     }
 
-    /// The gap this closes: the belt had a picker and nothing read it.
-    func testItReadsWhatTheBeltWrites() throws {
+    /// The seam itself. If this fails, every other case in this file is
+    /// writing to the operator's real settings — so assert it rather than
+    /// trusting setUp ran.
+    func testTheSeamDivertsAwayFromTheRealFile() throws {
+        let real = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".config/llm/provider.json")
+        XCTAssertNotEqual(LLMPreference.fileURL, real)
+        XCTAssertTrue(LLMPreference.fileURL.path.hasPrefix(sandbox.path))
+    }
+
+    /// The gap this closes: the machine had a provider picker and nothing in
+    /// ShotScribe read it.
+    func testItReadsWhatThePickerWrites() throws {
         // The exact shape the shared settings file uses. Named after its
         // subject, not after any host — this app reads a machine-level
         // preference and has no idea who else writes it.

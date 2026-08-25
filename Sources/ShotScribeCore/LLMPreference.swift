@@ -43,8 +43,18 @@ public struct LLMPreference: Sendable, Equatable {
     /// False when no file exists — nobody has chosen, so nothing is overridden.
     public var isSet: Bool
 
+    /// Overrides `fileURL`. **Exists so tests never touch the real file.**
+    ///
+    /// The same lesson as `ShotIndex.storeOverride`: with no seam, testing this
+    /// reader meant writing junk into the operator's actual
+    /// `~/.config/llm/provider.json` and deleting it between cases — and that
+    /// is a machine-level setting other apps here also read, so corrupting it
+    /// is not a local mistake. Data a test can reach is data a test will
+    /// eventually corrupt; the fix is a seam, not care.
+    public static var fileOverride: URL?
+
     public static var fileURL: URL {
-        FileManager.default.homeDirectoryForCurrentUser
+        fileOverride ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".config/llm/provider.json")
     }
 

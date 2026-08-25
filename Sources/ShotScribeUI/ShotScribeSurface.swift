@@ -270,9 +270,9 @@ public struct ShotScribeView: View {
     }
 
     private var shotsTiles: some View {
-        // Adaptive columns rather than a fixed count: the pane is 680pt on the
-        // belt and whatever the user drags it to standalone, and a fixed grid
-        // wastes exactly the space this change was meant to reclaim.
+        // Adaptive columns rather than a fixed count: the pane may be as narrow
+        // as 680pt when hosted, or whatever the user drags it to standalone,
+        // and a fixed grid wastes the space this change was meant to reclaim.
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190, maximum: 280), spacing: 12)],
                   alignment: .leading, spacing: 12) {
             ForEach(model.visibleShots.prefix(300)) { shot in
