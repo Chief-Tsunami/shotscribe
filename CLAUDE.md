@@ -109,7 +109,7 @@ maintained alongside the code as work happens, via `/save`. Two rules bite in pr
 
 - **`roadmap.md` is lowercase, gitignored, and never committed.** If it shows up staged or
   tracked, stop and fix that first.
-- **Never accumulate more than 10 unpushed file changes.** At 10, commit meaningfully and push.
+- **Pushing is user-authorised only** (`~/.git-hooks/pre-push` requires `MANUAL_PUSH=1`). Commit locally; push at end of day or when asked.
 
 `skills/screenshot/SKILL.md` is a product of this repo — the `/screenshot` gesture shipped
 to other Claude Code users — not config for working here.

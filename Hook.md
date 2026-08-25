@@ -8,15 +8,20 @@ to reflect it. `/save` is the checkpoint gesture — run it to bring all
 three back in sync with the repo's actual state.
 
 ## Push rule
-Never accumulate more than **10 changes** (file edits since the last push).
-At 10, stop, commit meaningfully, and push. Working tree was clean at audit
-time (2026-08-12), HEAD at `9d2c9a2`.
+**Pushing is user-authorised only.** `~/.git-hooks/pre-push` blocks pushes from
+`~/git/personal` and `~/git/work` unless `MANUAL_PUSH=1`. It is a gate rather
+than a guideline because the rule it replaces — "at 10 changes, commit and push"
+— was written in twelve files and out-voted every spoken "local only" (2026-08-25:
+100 of 103 commits across these repos were assistant-pushed).
+
+Commit locally and freely; local commits are cheap and make history bisectable.
+**Push once at end of day, or when asked.** A soft reminder late in the day is
+welcome. An automatic push is not.
 
 ## Roadmap rule
 `roadmap.md` is **local planning only and never gets committed.** It lives at
 the repo root, lowercase, with `/roadmap.md` in `.gitignore`. It reads as noise
-to anyone reviewing the project, and staying untracked also keeps roadmap churn
-from counting toward the 10-change push threshold. If it ever shows up staged
+to anyone reviewing the project, and staying untracked keeps it out of review. If it ever shows up staged
 or tracked, stop and fix that before anything else.
 
 ## Phase rule
