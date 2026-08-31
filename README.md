@@ -102,7 +102,7 @@ what Claude *saw* rather than just the OCR text. Install:
 
 ```bash
 mkdir -p ~/.claude/skills/screenshot
-curl -fsSL https://raw.githubusercontent.com/Chief-Tsunami/shotscribe/main/skills/screenshot/SKILL.md \
+curl -fsSL https://raw.githubusercontent.com/josh-vanorden/shotscribe/main/skills/screenshot/SKILL.md \
   -o ~/.claude/skills/screenshot/SKILL.md
 ```
 
@@ -155,7 +155,7 @@ host's:
   same capture. A hosted copy notices the standalone app running, says so, and
   stands down until you quit it.
 
-[Toolbelt](https://github.com/Chief-Tsunami/toolbelt) mounts it this way; its
+[Toolbelt](https://github.com/josh-vanorden/toolbelt) mounts it this way; its
 whole integration is a twenty-line adapter. ShotScribe has no dependency on
 Toolbelt and never will.
 
