@@ -4,7 +4,36 @@ ShotScribe turns raw macOS screenshot filenames ("Screenshot 2026-08-11 at
 3.41.07 PM.png") into dated, findable titles ("2026-08-11 1541 AWS Billing
 Console.png") — on-device OCR (Apple Vision) plus a swappable Titler seam.
 
-## Current state (as of 2026-08-20, v0.4.0)
+## Current state (2026-09-03 — the fourth question: what is kept)
+
+ShotScribe answered *where* (the watch folder), *when* (the watch toggle) and
+*how* (the titler). It now answers **what is kept**, in a Keep block beside the
+others — the surface the other sidecars copy (toolbelt `Phase.md`, "The
+local-setup contract"):
+
+- **Undo.** The raw capture name rides in the index (`IndexedShot.original`),
+  so a rename can be walked back from the tile's context menu or an Undo on
+  the history row, for as long as the file is where the rename left it. The
+  watcher is told about the restored name *before* the move, or it would
+  rename the file straight back.
+- **Sessions.** Consecutive captures within a gap the user sets (default 3
+  min, Off–15) fold into one stacked tile — the last shot stands for the
+  burst, count on its shoulder — and open out in place. Flat while searching
+  and under the name sorts, where "consecutive" means nothing.
+- **Clean-up.** Duplicates (same text, whitespace- and case-insensitive; thin
+  or empty OCR never counts) and captures older than N days (Never–365) are
+  *flagged*, never acted on: **Preview clean-up** shows every move with its
+  reason, and only **Move N to …** applies it. Destination is the Trash or an
+  archive folder the user picks. Nothing is ever deleted outright.
+- **Found on the way:** `ShotIndex.record` keyed by the path it was handed,
+  `reindex` by the filesystem-canonical one; under `/var/…` a sweep built a
+  twin entry and the original name rode with neither. Both key canonically now.
+
+Engine: `Keeping.swift` — `KeepPolicy`, `Sessions.collapse`, `Cleanup.plan`
+(pure) and `Cleanup.apply` (the only thing that touches disk, and it takes the
+plan the user saw). 50 tests.
+
+## Earlier state (as of 2026-08-20, v0.4.0)
 - Swift package, five targets: `ShotScribeCore` (the engine), `shotscribe`
   (CLI), `shotscribe-mcp` (MCP server for Claude Code/Cowork), **`ShotScribeUI`
   (the face as a mountable library)**, and `shotscribe-menubar` (the menu bar
@@ -29,6 +58,10 @@ Console.png") — on-device OCR (Apple Vision) plus a swappable Titler seam.
   skill) are now shipped, per the latest commit message.
 
 ## Key decisions
+- **A plan is shown before it is applied, and clean-up never deletes** (2026-09-03).
+  `Cleanup.plan` is pure; `apply` takes that plan, not a policy it re-evaluates,
+  so what moves is exactly what was on screen. Trash or an archive folder, both
+  recoverable. Thin OCR text is unknown, not a match — it never makes duplicates.
 - Only macOS default capture filenames get renamed — a file the user named
   themselves is never touched (safety rule baked into the core).
 - OCR always stays on-device; only extracted text (never the image) reaches

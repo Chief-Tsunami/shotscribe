@@ -48,6 +48,13 @@ public final class FolderWatcher: @unchecked Sendable {
         source = nil
     }
 
+    /// Treat `url` as already seen. An undo puts a file back under the raw
+    /// "Screenshot …" name — exactly what this watcher reports as new — so the
+    /// caller announces it here first, and the scan that follows skips it.
+    public func ignore(_ url: URL) {
+        queue.sync { seen.insert(url.path) }
+    }
+
     /// Debounce bursts (a capture can touch the dir several times) into one scan.
     private func scheduleScan() {
         debounce?.cancel()

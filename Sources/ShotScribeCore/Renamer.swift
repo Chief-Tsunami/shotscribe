@@ -71,6 +71,25 @@ public struct Renamer: Sendable {
         return .renamed(from: url, to: target)
     }
 
+    // MARK: Undo
+
+    /// Where an undo would put `url` back: its original name, suffixed only if
+    /// something else has taken that name meanwhile.
+    public static func restoredURL(for url: URL, original: String) -> URL {
+        let dir = url.deletingLastPathComponent()
+        let name = Naming.uniqueName(original) {
+            FileManager.default.fileExists(atPath: dir.appendingPathComponent($0).path)
+        }
+        return dir.appendingPathComponent(name)
+    }
+
+    /// The undo itself — a plain move. Kept apart from `restoredURL` so a
+    /// caller can announce the target to a watcher *before* the file appears
+    /// under a raw name it would otherwise pounce on.
+    public static func restore(fileAt url: URL, to target: URL) throws {
+        try FileManager.default.moveItem(at: url, to: target)
+    }
+
     /// Best-effort capture time: file creation date, then modification date,
     /// then now.
     private func capturedAt(of url: URL) -> Date {

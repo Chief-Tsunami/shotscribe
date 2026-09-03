@@ -1,4 +1,5 @@
 import SwiftUI
+import ShotScribeCore
 import UniformTypeIdentifiers
 import AppKit
 
@@ -106,6 +107,7 @@ public struct ShotScribeView: View {
                 // ShotScribe does to them, then how to find one.
                 folderRow
                 actionsBlock
+                keepBlock
                 searchField
                 errorLine
                 shotsBlock
@@ -271,48 +273,269 @@ public struct ShotScribeView: View {
 
     private var shotsTiles: some View {
         // Adaptive columns rather than a fixed count: the pane may be as narrow
-        // as 680pt when hosted, or whatever the user drags it to standalone,
+        // as 824pt when hosted, or whatever the user drags it to standalone,
         // and a fixed grid wastes the space this change was meant to reclaim.
+        //
+        // Bursts fold into one tile when the Keep policy says so; a folded
+        // session opens out in place, and its first tile carries the way back.
         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190, maximum: 280), spacing: 12)],
                   alignment: .leading, spacing: 12) {
-            ForEach(model.visibleShots.prefix(300)) { shot in
-                Button {
-                    model.selecting ? model.toggleSelected(shot) : model.reveal(shot)
-                } label: {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Thumbnail(path: shot.path)
-                            .overlay(alignment: .topLeading) {
-                                if model.selecting {
-                                    Image(systemName: model.selected.contains(shot.path)
-                                          ? "checkmark.circle.fill" : "circle")
-                                        .font(.system(size: 17))
-                                        .symbolRenderingMode(.palette)
-                                        .foregroundStyle(.white, model.selected.contains(shot.path)
-                                                         ? AnyShapeStyle(.tint) : AnyShapeStyle(.black.opacity(0.35)))
-                                        .padding(7)
-                                }
-                            }
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(shot.name).font(.caption.weight(.medium))
-                                .lineLimit(1).truncationMode(.middle)
-                            Text(shot.captured, format: .dateTime.year().month().day())
-                                .font(.caption2).foregroundStyle(.secondary)
-                        }
-                        .padding(.horizontal, 8).padding(.vertical, 6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(model.sessions.prefix(300)) { s in
+                if s.isBurst && !model.isExpanded(s) {
+                    sessionTile(s)
+                } else {
+                    ForEach(s.shots) { shot in
+                        tile(shot, in: s.isBurst ? s : nil)
                     }
-                    .background(.quinary)
-                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .strokeBorder(model.selected.contains(shot.path)
-                                      ? AnyShapeStyle(.tint) : AnyShapeStyle(.separator),
-                                      lineWidth: model.selected.contains(shot.path) ? 2 : 1))
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
-                .help(shot.path)
             }
         }
+    }
+
+    /// One screenshot. `session` is set when the tile is part of an opened-out
+    /// burst; its first tile then shows the collapse badge.
+    private func tile(_ shot: IndexedShot, in session: Session?) -> some View {
+        let picked = model.selected.contains(shot.path)
+        let leadsSession = session?.shots.first?.path == shot.path
+        return Button {
+            model.selecting ? model.toggleSelected(shot) : model.reveal(shot)
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Thumbnail(path: shot.path)
+                    .overlay(alignment: .topLeading) {
+                        if model.selecting {
+                            Image(systemName: picked ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 17))
+                                .symbolRenderingMode(.palette)
+                                .foregroundStyle(.white, picked ? AnyShapeStyle(.tint) : AnyShapeStyle(.black.opacity(0.35)))
+                                .padding(7)
+                        }
+                    }
+                    .overlay(alignment: .topTrailing) {
+                        if let session, leadsSession {
+                            Button { model.toggleExpanded(session) } label: {
+                                Label("\(session.count)", systemImage: "chevron.up")
+                                    .font(.caption2.weight(.semibold))
+                                    .padding(.horizontal, 7).padding(.vertical, 4)
+                                    .background(.black.opacity(0.55), in: Capsule())
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(7)
+                            .help("Fold these \(session.count) back into one tile")
+                        }
+                    }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(shot.name).font(.caption.weight(.medium))
+                        .lineLimit(1).truncationMode(.middle)
+                    Text(shot.captured, format: .dateTime.year().month().day())
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(.quinary)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(picked ? AnyShapeStyle(.tint)
+                              : session != nil ? AnyShapeStyle(ShotPalette.accent.opacity(0.45))
+                              : AnyShapeStyle(.separator),
+                              lineWidth: picked ? 2 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(shot.path)
+        .contextMenu {
+            Button("Reveal in Finder") { model.reveal(shot) }
+            if shot.original != nil {
+                Button("Restore original name") { model.undo(shot) }
+            }
+            Divider()
+            Button("Move to Trash", role: .destructive) { model.trash(shot) }
+        }
+    }
+
+    /// A folded burst: the last shot stands for the whole, with the count on
+    /// its shoulder and a second edge behind so it reads as a stack.
+    private func sessionTile(_ s: Session) -> some View {
+        Button { model.toggleExpanded(s) } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Thumbnail(path: (s.representative ?? s.shots[0]).path)
+                    .overlay(alignment: .topTrailing) {
+                        Label("\(s.count)", systemImage: "square.stack")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 7).padding(.vertical, 4)
+                            .background(.black.opacity(0.55), in: Capsule())
+                            .foregroundStyle(.white)
+                            .padding(7)
+                    }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(s.title).font(.caption.weight(.medium))
+                        .lineLimit(1).truncationMode(.middle)
+                    sessionRange(s).font(.caption2).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .background(.quinary)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(.separator, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(.quaternary).offset(x: 4, y: 4))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("\(s.count) captures within \(model.keepPolicy.sessionGapMinutes) minutes of each other — click to open them out")
+    }
+
+    private func sessionRange(_ s: Session) -> Text {
+        Text("\(s.count) shots · ")
+            + Text(s.start, format: .dateTime.hour().minute())
+            + Text("–")
+            + Text(s.end, format: .dateTime.hour().minute())
+    }
+
+    // MARK: Keep
+
+    private func keep<T>(_ path: WritableKeyPath<KeepPolicy, T>) -> Binding<T> {
+        Binding(get: { model.keepPolicy[keyPath: path] },
+                set: { model.keepPolicy[keyPath: path] = $0 })
+    }
+
+    /// What is kept — the fourth question, beside where / when / how.
+    private var keepBlock: some View {
+        GroupBox {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Keep").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                keepRow("Group bursts into sessions",
+                        "Captures within a few minutes of each other fold into one tile.") {
+                    Picker("", selection: keep(\.sessionGapMinutes)) {
+                        Text("Off").tag(0)
+                        ForEach([1, 3, 5, 10, 15], id: \.self) { Text("\($0) min").tag($0) }
+                    }
+                    .labelsHidden().frame(width: 84)
+                }
+                Divider()
+                Toggle(isOn: keep(\.flagDuplicates)) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Flag duplicates")
+                        Text("A later capture whose text matches an earlier one. Thin or empty text never counts.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+                .toggleStyle(.switch).controlSize(.small)
+                keepRow("Flag older than", "Captures past this age are offered for clean-up.") {
+                    Picker("", selection: olderThanBinding) {
+                        Text("Never").tag(0)
+                        ForEach([30, 90, 180, 365], id: \.self) { Text("\($0) days").tag($0) }
+                    }
+                    .labelsHidden().frame(width: 96)
+                }
+                keepRow("Flagged captures go to", destinationDetail) { destinationPicker }
+                Divider()
+                HStack(spacing: 10) {
+                    Button {
+                        model.previewCleanup()
+                    } label: {
+                        Label("Preview clean-up", systemImage: "sparkles")
+                    }
+                    .disabled(model.indexedCount == 0 || model.cleaning)
+                    Text("Nothing moves until you confirm the list.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                if let plan = model.cleanupPlan { cleanupPreview(plan) }
+            }
+            .padding(4)
+        }
+    }
+
+    private func keepRow<Control: View>(_ title: String, _ detail: String,
+                                        @ViewBuilder control: () -> Control) -> some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                Text(detail).font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            control()
+        }
+    }
+
+    private var olderThanBinding: Binding<Int> {
+        Binding(get: { model.keepPolicy.olderThanDays ?? 0 },
+                set: { model.keepPolicy.olderThanDays = $0 == 0 ? nil : $0 })
+    }
+
+    private var destinationDetail: String {
+        switch model.keepPolicy.destination {
+        case .trash:             return "The Trash — recoverable from Finder. Nothing is ever deleted outright."
+        case .archive(let path): return (path as NSString).abbreviatingWithTildeInPath
+        }
+    }
+
+    private var destinationPicker: some View {
+        HStack(spacing: 8) {
+            Picker("", selection: Binding<Bool>(
+                get: { if case .archive = model.keepPolicy.destination { return true } else { return false } },
+                set: { archive in
+                    if archive { model.chooseArchiveFolder() }
+                    else { model.keepPolicy.destination = .trash }
+                })) {
+                Text("Trash").tag(false)
+                Text("Archive folder").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            if case .archive(let path) = model.keepPolicy.destination {
+                Button((path as NSString).lastPathComponent + "…") { model.chooseArchiveFolder() }
+                    .controlSize(.small)
+                    .help(path)
+            }
+        }
+    }
+
+    /// The list, before anything moves. Every row says why it is there.
+    private func cleanupPreview(_ plan: Cleanup.Plan) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if plan.isEmpty {
+                HStack {
+                    Text("Nothing to clean up — no duplicates, nothing past the age you set.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Done") { model.cancelCleanup() }.controlSize(.small)
+                }
+            } else {
+                Text("\(plan.moves.count) screenshot\(plan.moves.count == 1 ? "" : "s") would move to \(plan.destination.label): \(plan.duplicates) duplicate\(plan.duplicates == 1 ? "" : "s"), \(plan.stale) older than you keep.")
+                    .font(.caption.weight(.medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(plan.moves.prefix(8)) { m in
+                    HStack(spacing: 6) {
+                        Text(m.shot.name).font(.caption2).lineLimit(1).truncationMode(.middle)
+                        Text("— \(m.why)").font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.tail)
+                    }
+                }
+                if plan.moves.count > 8 {
+                    Text("…and \(plan.moves.count - 8) more").font(.caption2).foregroundStyle(.secondary)
+                }
+                HStack(spacing: 8) {
+                    Button(role: .destructive) {
+                        model.applyCleanup()
+                    } label: {
+                        Label("Move \(plan.moves.count) to \(plan.destination.label)", systemImage: "arrow.right.circle")
+                    }
+                    .controlSize(.small)
+                    .disabled(model.cleaning)
+                    Button("Cancel") { model.cancelCleanup() }.controlSize(.small)
+                    if model.cleaning { ProgressView().controlSize(.small) }
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(ShotPalette.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     /// The one thing a hosted copy must say out loud: it is deliberately not
@@ -577,10 +800,20 @@ public struct ShotScribeView: View {
         VStack(alignment: .leading, spacing: 5) {
             Text("Recent").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             ForEach(model.events.prefix(limit)) { e in
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(e.to).font(.caption).lineLimit(1).truncationMode(.middle)
-                    Text(e.from).font(.caption2).foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.middle)
+                HStack(alignment: .center, spacing: 8) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(e.to).font(.caption).lineLimit(1).truncationMode(.middle)
+                        Text(e.from).font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    Spacer(minLength: 8)
+                    // The way back, on the row that describes the rename — for
+                    // as long as the file is still where the rename left it.
+                    if model.canUndo(e) {
+                        Button("Undo") { model.undo(e) }
+                            .controlSize(.mini)
+                            .help("Put “\(e.from)” back")
+                    }
                 }
             }
         }

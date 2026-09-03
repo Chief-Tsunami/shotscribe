@@ -69,3 +69,16 @@ to mount.
   menu bar popover still opens and shows the real history, and the belt-hosted
   pane shows the right folder, the real history, and the stand-down banner
   appearing and clearing as ShotScribe.app starts and quits.
+
+## 2026-09-03 — The fourth question: what is kept
+
+Where, when and how were answered; nothing said what became of a capture
+afterwards. Added `Keeping.swift` (`KeepPolicy`, `Sessions`, `Cleanup`), the
+original name in the index with `Renamer.restoredURL`/`restore` and
+`FolderWatcher.ignore` behind an Undo, session tiles that fold bursts, and a
+Keep block with a previewed, confirmed clean-up to the Trash or an archive
+folder. The undo test exposed `record` and `reindex` keying the index by
+different spellings of one path; both key canonically now. Verified: 50 tests
+green (17 new), `swift build` clean, and the belt built against this working
+copy in edit mode (the Keep block's strings are in its binary). **Not yet seen
+on screen** — the Mac was locked when the capture ran.

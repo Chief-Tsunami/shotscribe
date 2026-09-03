@@ -27,6 +27,7 @@ public final class ShotScribeModel: ObservableObject {
     static let watchingKey = "shotscribe.watching"
     static let useClaudeKey = "shotscribe.useClaude"
     static let eventsKey = "shotscribe.events"
+    static let keepKey = "shotscribe.keep"
     private static let maxEvents = 20
 
     /// Auto-rename new captures as they land. ON by default: launching an app
@@ -166,6 +167,130 @@ public final class ShotScribeModel: ObservableObject {
         rebuildIndex()
     }
 
+    // MARK: - Keeping
+
+    /// What is kept. Persisted beside the folder and the toggles, in
+    /// ShotScribe's own defaults. A changed policy drops any open clean-up
+    /// preview — it was computed under the old one.
+    @Published public var keepPolicy: KeepPolicy = .default {
+        didSet {
+            if let data = try? JSONEncoder().encode(keepPolicy) {
+                Self.defaults.set(data, forKey: Self.keepKey)
+            }
+            if keepPolicy != oldValue { cleanupPlan = nil }
+        }
+    }
+
+    /// The plan the user is looking at. nil = no preview open.
+    @Published public private(set) var cleanupPlan: Cleanup.Plan?
+    @Published public private(set) var cleaning = false
+
+    /// What the policy would move — nothing touches disk here.
+    public func previewCleanup() {
+        cleanupPlan = Cleanup.plan(indexCache, policy: keepPolicy)
+    }
+
+    public func cancelCleanup() { cleanupPlan = nil }
+
+    /// Apply the plan the user just looked at. Off the main thread — a hundred
+    /// moves to the Trash is not instant.
+    public func applyCleanup() {
+        guard let plan = cleanupPlan, !plan.isEmpty, !cleaning else { return }
+        cleaning = true
+        Task.detached(priority: .utility) { [weak self] in
+            let outcome = Cleanup.apply(plan)
+            await MainActor.run {
+                guard let self else { return }
+                self.cleaning = false
+                self.cleanupPlan = nil
+                Log.write("clean-up: \(outcome.moved.count) → \(plan.destination.label), \(outcome.failures.count) failed")
+                self.lastError = outcome.failures.isEmpty ? nil
+                    : "Couldn’t move \(outcome.failures.count) of \(plan.moves.count): \(outcome.failures.values.first ?? "")"
+                self.loadIndex()
+                self.runSearch()
+            }
+        }
+    }
+
+    /// NSOpenPanel → the archive folder. Picking one also selects archiving.
+    public func chooseArchiveFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Archive Here"
+        panel.message = "Flagged screenshots move into this folder instead of the Trash."
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        keepPolicy.destination = .archive(path: url.path)
+    }
+
+    // Sessions
+
+    /// Which bursts are opened out, by session id.
+    @Published var expandedSessions: Set<String> = []
+
+    /// The tiles, folded into sessions when the policy says so. Flat while
+    /// searching (results are ranked, not chronological) and under the name
+    /// sorts, where "consecutive" means nothing.
+    var sessions: [Session] {
+        let chronological = query.trimmingCharacters(in: .whitespaces).isEmpty
+            && (sort == .newest || sort == .oldest)
+        return Sessions.collapse(visibleShots, gapMinutes: chronological ? keepPolicy.sessionGapMinutes : 0)
+    }
+
+    func isExpanded(_ s: Session) -> Bool { expandedSessions.contains(s.id) }
+
+    func toggleExpanded(_ s: Session) {
+        if expandedSessions.contains(s.id) { expandedSessions.remove(s.id) }
+        else { expandedSessions.insert(s.id) }
+    }
+
+    // Undo
+
+    /// A history row can be walked back while the renamed file is still where
+    /// the rename left it. A row whose "from" is not a raw capture name is an
+    /// undo itself, and is not offered again.
+    func canUndo(_ e: RenameEvent) -> Bool {
+        Naming.isRawCapture(e.from)
+            && FileManager.default.fileExists(atPath: folder.appendingPathComponent(e.to).path)
+    }
+
+    func undo(_ e: RenameEvent) {
+        restore(folder.appendingPathComponent(e.to), original: e.from)
+    }
+
+    func undo(_ shot: IndexedShot) {
+        guard let original = shot.original else { return }
+        restore(shot.url, original: original)
+    }
+
+    /// Put a capture back under the name it arrived with.
+    ///
+    /// The watcher is told first: a raw "Screenshot …" name reappearing in the
+    /// folder is exactly what it watches for, and without `ignore` it would
+    /// rename the file straight back. The move follows in the same turn, well
+    /// inside the watcher's half-second debounce.
+    private func restore(_ url: URL, original: String) {
+        let target = Renamer.restoredURL(for: url, original: original)
+        watcher?.ignore(target)
+        do {
+            try Renamer.restore(fileAt: url, to: target)
+            Log.write("undo: \(url.lastPathComponent) → \(target.lastPathComponent)")
+            record(from: url.lastPathComponent, to: target.lastPathComponent)
+            lastError = nil
+            Task.detached(priority: .utility) { [weak self] in
+                ShotIndex.forget(url.path)
+                ShotIndex.record(target)
+                await MainActor.run { self?.loadIndex(); self?.runSearch() }
+            }
+        } catch {
+            Log.write("undo FAILED: \(error)")
+            lastError = "Couldn’t restore the original name: \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Launch at login
 
     /// SMAppService only works from a real .app bundle; from `swift run` the
@@ -198,6 +323,10 @@ public final class ShotScribeModel: ObservableObject {
         }
         if let raw = ud.string(forKey: "shotSort"), let v = ShotSort(rawValue: raw) {
             sort = v
+        }
+        if let data = ud.data(forKey: Self.keepKey),
+           let saved = try? JSONDecoder().decode(KeepPolicy.self, from: data) {
+            keepPolicy = saved
         }
         loadIndex()
         refreshOtherInstance()
@@ -346,7 +475,7 @@ public final class ShotScribeModel: ObservableObject {
                 // stale entry pointing at a file that no longer exists.
                 Task.detached(priority: .utility) {
                     ShotIndex.forget(from.path)
-                    ShotIndex.record(to)
+                    ShotIndex.record(to, original: from.lastPathComponent)
                 }
                 if label != nil { lastError = nil }
             }
@@ -427,7 +556,12 @@ public final class ShotScribeModel: ObservableObject {
     /// tool that deletes outright is one you stop trusting the first time it is
     /// wrong, and it would be wrong about a screenshot you had not looked at yet.
     func trashSelected() {
-        let urls = selected.map { URL(fileURLWithPath: $0) }
+        trash(selected.map { URL(fileURLWithPath: $0) })
+    }
+
+    func trash(_ shot: IndexedShot) { trash([shot.url]) }
+
+    private func trash(_ urls: [URL]) {
         guard !urls.isEmpty else { return }
         NSWorkspace.shared.recycle(urls) { [weak self] _, error in
             Task { @MainActor in

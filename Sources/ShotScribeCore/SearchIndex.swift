@@ -34,6 +34,9 @@ public struct IndexedShot: Codable, Identifiable, Equatable, Sendable {
     /// Byte size at index time — a cheap way to notice a file changed underneath.
     public var size: Int64
     public var text: String
+    /// The raw capture name this shot arrived with, when ShotScribe renamed
+    /// it — what an undo puts back. nil for a shot that was never renamed here.
+    public var original: String? = nil
 
     public var url: URL { URL(fileURLWithPath: path) }
 }
@@ -141,7 +144,8 @@ public enum ShotIndex {
                 ?? (attrs?[.modificationDate] as? Date) ?? Date()
             store.shots[url.path] = IndexedShot(
                 path: url.path, name: url.deletingPathExtension().lastPathComponent,
-                captured: captured, indexed: Date(), size: size, text: text)
+                captured: captured, indexed: Date(), size: size, text: text,
+                original: store.shots[url.path]?.original)
             indexed += 1
         }
 
@@ -176,21 +180,42 @@ public enum ShotIndex {
 
     /// Record one screenshot immediately — used right after a rename, so a shot
     /// is findable the moment it is named rather than at the next sweep.
-    public static func record(_ url: URL) {
+    public static func record(_ url: URL, original: String? = nil) {
         var store = load()
-        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
-        store.shots[url.path] = IndexedShot(
-            path: url.path, name: url.deletingPathExtension().lastPathComponent,
+        // Key by the canonical path, as `reindex` does. `record` used to key by
+        // whatever path it was handed, so under `/var/…` (which the filesystem
+        // spells `/private/var/…`) a later sweep found no existing entry, built
+        // a second one, and the original name rode along with neither. Caught
+        // by the undo test on 2026-09-03; `/Users/…` paths had hidden it.
+        let path = canonicalPath(url)
+        let attrs = try? FileManager.default.attributesOfItem(atPath: path)
+        store.shots[path] = IndexedShot(
+            path: path, name: url.deletingPathExtension().lastPathComponent,
             captured: (attrs?[.creationDate] as? Date) ?? Date(), indexed: Date(),
             size: (attrs?[.size] as? NSNumber)?.int64Value ?? 0,
-            text: searchText(atPath: url.path))
+            text: searchText(atPath: url.path), original: original)
         save(store)
     }
 
     /// Drop an entry whose file has moved away under a rename.
-    public static func forget(_ path: String) {
+    public static func forget(_ path: String) { forget([path]) }
+
+    /// What the filesystem calls `url`, which is what the index keys by. A
+    /// file that no longer exists cannot be asked, so its path is used as given.
+    static func canonicalPath(_ url: URL) -> String {
+        (try? url.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath ?? url.path
+    }
+
+    /// Drop several at once — one load and one save, not one per shot.
+    public static func forget(_ paths: [String]) {
+        guard !paths.isEmpty else { return }
         var store = load()
-        store.shots.removeValue(forKey: path)
+        for p in paths {
+            store.shots.removeValue(forKey: p)
+            // The file is usually gone by now, so the canonical form cannot be
+            // asked for; try the one spelling the filesystem is known to use.
+            if p.hasPrefix("/var/") { store.shots.removeValue(forKey: "/private" + p) }
+        }
         save(store)
     }
 
