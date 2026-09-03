@@ -351,7 +351,7 @@ public struct ShotScribeView: View {
             // head; in its own window there is no rail, so the header is the
             // only place the app says what it is.
             if chrome != .hosted {
-                ToolIcon(icon: ShotScribeSurface.appIcon, fallback: "text.viewfinder",
+                ToolIcon(icon: nil, fallback: "text.viewfinder",
                          tint: ShotPalette.accent, size: 30)
             }
             Image(systemName: watchState.symbol)
