@@ -80,5 +80,5 @@ Keep block with a previewed, confirmed clean-up to the Trash or an archive
 folder. The undo test exposed `record` and `reindex` keying the index by
 different spellings of one path; both key canonically now. Verified: 50 tests
 green (17 new), `swift build` clean, and the belt built against this working
-copy in edit mode (the Keep block's strings are in its binary). **Not yet seen
-on screen** — the Mac was locked when the capture ran.
+copy in edit mode. Seen on screen later the same day, mounted in the belt from
+the v0.6.0 tag: the Keep block, the pickers and the session grid all render.
