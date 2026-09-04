@@ -185,9 +185,14 @@ public final class ShotScribeModel: ObservableObject {
     @Published public private(set) var cleanupPlan: Cleanup.Plan?
     @Published public private(set) var cleaning = false
 
-    /// What the policy would move — nothing touches disk here.
+    /// What the policy would move — nothing touches disk here. **Scoped to
+    /// the watched folder**: the index is global, and a plan over all of it
+    /// reached every folder ever watched while the list named only files
+    /// (QA, 2026-09-04).
     public func previewCleanup() {
-        cleanupPlan = Cleanup.plan(indexCache, policy: keepPolicy)
+        let root = ((try? folder.resourceValues(forKeys: [.canonicalPathKey]))?.canonicalPath ?? folder.path) + "/"
+        let here = indexCache.filter { $0.path.hasPrefix(root) }
+        cleanupPlan = Cleanup.plan(here, policy: keepPolicy)
     }
 
     public func cancelCleanup() { cleanupPlan = nil }
@@ -223,6 +228,12 @@ public final class ShotScribeModel: ObservableObject {
         panel.message = "Flagged screenshots move into this folder instead of the Trash."
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        // Archiving into the watched folder would "move" a file onto itself
+        // with a suffix and re-flag it on every pass.
+        guard url.standardizedFileURL != folder.standardizedFileURL else {
+            lastError = "The archive folder can't be the folder being watched."
+            return
+        }
         keepPolicy.destination = .archive(path: url.path)
     }
 
@@ -253,7 +264,11 @@ public final class ShotScribeModel: ObservableObject {
     /// the rename left it. A row whose "from" is not a raw capture name is an
     /// undo itself, and is not offered again.
     func canUndo(_ e: RenameEvent) -> Bool {
-        Naming.isRawCapture(e.from)
+        // Not while ShotScribe.app is watching this folder: the only watcher
+        // an undo can warn is this copy's, and the other app would rename the
+        // restored file straight back (QA, 2026-09-04).
+        !otherInstanceRunning
+            && Naming.isRawCapture(e.from)
             && FileManager.default.fileExists(atPath: folder.appendingPathComponent(e.to).path)
     }
 

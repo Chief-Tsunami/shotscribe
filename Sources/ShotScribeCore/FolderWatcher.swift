@@ -29,15 +29,19 @@ public final class FolderWatcher: @unchecked Sendable {
     public func start() -> Bool {
         fd = open(directory.path, O_EVTONLY)
         guard fd >= 0 else { return false }
-        seen = Set(currentImageFiles().map(\.path))   // ignore the existing backlog
+        // Keyed by filename: this is one flat directory, and a path can be
+        // spelled two ways (`/var` and `/private/var`) while a name cannot —
+        // `ignore` and the scan must agree on the key (QA, 2026-09-04).
+        seen = Set(currentImageFiles().map(\.lastPathComponent))   // ignore the existing backlog
 
         let src = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd, eventMask: [.write, .extend, .rename], queue: queue)
         src.setEventHandler { [weak self] in self?.scheduleScan() }
-        src.setCancelHandler { [weak self] in
-            if let fd = self?.fd, fd >= 0 { close(fd) }
-            self?.fd = -1
-        }
+        // The descriptor by value: the cancel handler runs after `stop()` has
+        // returned and the last strong reference is usually gone, so a weak
+        // read closed nothing — one leaked fd per toggle (QA, 2026-09-04).
+        let owned = fd
+        src.setCancelHandler { close(owned) }
         source = src
         src.resume()
         return true
@@ -46,13 +50,14 @@ public final class FolderWatcher: @unchecked Sendable {
     public func stop() {
         source?.cancel()
         source = nil
+        fd = -1
     }
 
     /// Treat `url` as already seen. An undo puts a file back under the raw
     /// "Screenshot …" name — exactly what this watcher reports as new — so the
     /// caller announces it here first, and the scan that follows skips it.
     public func ignore(_ url: URL) {
-        queue.sync { seen.insert(url.path) }
+        queue.sync { seen.insert(url.lastPathComponent) }
     }
 
     /// Debounce bursts (a capture can touch the dir several times) into one scan.
@@ -64,8 +69,8 @@ public final class FolderWatcher: @unchecked Sendable {
     }
 
     private func scan() {
-        for url in currentImageFiles() where !seen.contains(url.path) {
-            seen.insert(url.path)
+        for url in currentImageFiles() where !seen.contains(url.lastPathComponent) {
+            seen.insert(url.lastPathComponent)
             onNewFile(url)
         }
     }

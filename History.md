@@ -82,3 +82,7 @@ different spellings of one path; both key canonically now. Verified: 50 tests
 green (17 new), `swift build` clean, and the belt built against this working
 copy in edit mode. Seen on screen later the same day, mounted in the belt from
 the v0.6.0 tag: the Keep block, the pickers and the session grid all render.
+
+## 2026-09-04 — QA pass
+
+A review agent read the Keep commit against its own design intent. Fixed: the clean-up plan is scoped to the watched folder and names it (it reached every folder ever watched); the preview lists every row; Cancel is disabled once moves are under way; the archive folder may not be the watched one; undo is withheld while ShotScribe.app watches the folder; the index serialises writes and the sweep merges onto the freshest store (a record made mid-sweep, and its original name, used to be overwritten); the watcher keys seen files by name and closes its descriptor by value (one leaked fd per toggle). Left: the eight-row preview nit became the scrolling list. 50 tests green.

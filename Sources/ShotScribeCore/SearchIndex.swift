@@ -66,6 +66,12 @@ public enum ShotIndex {
     /// corrupt; the fix is a seam, not care.
     public static var storeOverride: URL?
 
+    /// Every load-modify-save goes through this. `reindex` used to hold a
+    /// store across minutes of OCR and then save it, so a capture renamed and
+    /// recorded meanwhile was overwritten — and with it the original name that
+    /// makes its undo possible (QA, 2026-09-04).
+    private static let lock = NSLock()
+
     public static var indexURL: URL {
         storeOverride ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".shotscribe/index.json")
@@ -128,25 +134,36 @@ public enum ShotIndex {
     @discardableResult
     public static func reindex(folder: URL, force: Bool = false,
                                progress: ((Int, Int) -> Void)? = nil) -> (indexed: Int, skipped: Int, pruned: Int) {
-        var store = load()
+        let snapshot = load()          // read-only: decides what to skip
         let files = imageFiles(in: folder)
         var indexed = 0, skipped = 0
+        var updates: [String: IndexedShot] = [:]
 
         for (i, url) in files.enumerated() {
             progress?(i + 1, files.count)
             let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
-            if !force, let existing = store.shots[url.path], existing.size == size {
+            if !force, let existing = snapshot.shots[url.path], existing.size == size {
                 skipped += 1; continue
             }
             let text = searchText(atPath: url.path)
             let captured = (attrs?[.creationDate] as? Date)
                 ?? (attrs?[.modificationDate] as? Date) ?? Date()
-            store.shots[url.path] = IndexedShot(
+            updates[url.path] = IndexedShot(
                 path: url.path, name: url.deletingPathExtension().lastPathComponent,
                 captured: captured, indexed: Date(), size: size, text: text,
-                original: store.shots[url.path]?.original)
+                original: nil)
             indexed += 1
+        }
+
+        // Merge onto whatever the store says NOW, under the lock — a record
+        // made during the sweep survives, and so does its original name.
+        lock.lock(); defer { lock.unlock() }
+        var store = load()
+        for (path, shot) in updates {
+            var merged = shot
+            merged.original = store.shots[path]?.original
+            store.shots[path] = merged
         }
 
         // A renamed or deleted file leaves a stale entry pointing nowhere.
@@ -181,6 +198,7 @@ public enum ShotIndex {
     /// Record one screenshot immediately — used right after a rename, so a shot
     /// is findable the moment it is named rather than at the next sweep.
     public static func record(_ url: URL, original: String? = nil) {
+        lock.lock(); defer { lock.unlock() }
         var store = load()
         // Key by the canonical path, as `reindex` does. `record` used to key by
         // whatever path it was handed, so under `/var/…` (which the filesystem
@@ -209,6 +227,7 @@ public enum ShotIndex {
     /// Drop several at once — one load and one save, not one per shot.
     public static func forget(_ paths: [String]) {
         guard !paths.isEmpty else { return }
+        lock.lock(); defer { lock.unlock() }
         var store = load()
         for p in paths {
             store.shots.removeValue(forKey: p)

@@ -347,7 +347,7 @@ public struct ShotScribeView: View {
         .help(shot.path)
         .contextMenu {
             Button("Reveal in Finder") { model.reveal(shot) }
-            if shot.original != nil {
+            if shot.original != nil, !model.otherInstanceRunning {
                 Button("Restore original name") { model.undo(shot) }
             }
             Divider()
@@ -507,19 +507,23 @@ public struct ShotScribeView: View {
                     Button("Done") { model.cancelCleanup() }.controlSize(.small)
                 }
             } else {
-                Text("\(plan.moves.count) screenshot\(plan.moves.count == 1 ? "" : "s") would move to \(plan.destination.label): \(plan.duplicates) duplicate\(plan.duplicates == 1 ? "" : "s"), \(plan.stale) older than you keep.")
+                Text("\(plan.moves.count) screenshot\(plan.moves.count == 1 ? "" : "s") in \(model.folder.lastPathComponent) would move to \(plan.destination.label): \(plan.duplicates) duplicate\(plan.duplicates == 1 ? "" : "s"), \(plan.stale) older than you keep.")
                     .font(.caption.weight(.medium))
                     .fixedSize(horizontal: false, vertical: true)
-                ForEach(plan.moves.prefix(8)) { m in
-                    HStack(spacing: 6) {
-                        Text(m.shot.name).font(.caption2).lineLimit(1).truncationMode(.middle)
-                        Text("— \(m.why)").font(.caption2).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.tail)
+                // Every row, scrolling past a screenful: a list you confirm is
+                // a list you can read to the end.
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 3) {
+                        ForEach(plan.moves) { m in
+                            HStack(spacing: 6) {
+                                Text(m.shot.name).font(.caption2).lineLimit(1).truncationMode(.middle)
+                                Text("— \(m.why)").font(.caption2).foregroundStyle(.secondary)
+                                    .lineLimit(1).truncationMode(.tail)
+                            }
+                        }
                     }
                 }
-                if plan.moves.count > 8 {
-                    Text("…and \(plan.moves.count - 8) more").font(.caption2).foregroundStyle(.secondary)
-                }
+                .frame(maxHeight: 220)
                 HStack(spacing: 8) {
                     Button(role: .destructive) {
                         model.applyCleanup()
@@ -529,6 +533,7 @@ public struct ShotScribeView: View {
                     .controlSize(.small)
                     .disabled(model.cleaning)
                     Button("Cancel") { model.cancelCleanup() }.controlSize(.small)
+                        .disabled(model.cleaning)   // the moves are under way; "cancelled" would be a lie
                     if model.cleaning { ProgressView().controlSize(.small) }
                 }
             }
